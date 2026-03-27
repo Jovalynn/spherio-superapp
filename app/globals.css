@@ -1,8 +1,24 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Spherio Sovereign Infrastructure (Bloomberg / institutional) */
+  --bg: #0B0F17;
+  --panel: #121826;
+  --border: #1F2937;
+
+  --text: #E5E7EB;
+  --muted: #9CA3AF;
+
+  --accent: #D4A72C; /* RIO flame gold */
+  --success: #22C55E;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+}
+
+/* Optional: convenience classes */
+body {
+  background: var(--bg);
+  color: var(--text);
 }
 
 @theme inline {
@@ -23,4 +39,36 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+:root {
+  --background: #0f1115;
+  --foreground: #ffffff;
+  --accent: #d4af37;
+}
+
+[data-theme="central"] {
+  --background: #0f1115;
+  --foreground: #f8f8f8;
+  --accent: #d4af37;
+}
+
+[data-theme="fintech"] {
+  --background: #ffffff;
+  --foreground: #111111;
+  --accent: #111111;
+}
+
+[data-theme="terminal"] {
+  --background: #000000;
+  --foreground: #00ff99;
+  --accent: #00ff99;
+}
+
+.bg-background {
+  background-color: var(--background);
+}
+
+.text-foreground {
+  color: var(--foreground);
 }

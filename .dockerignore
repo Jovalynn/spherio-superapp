@@ -1,0 +1,46 @@
+# dependencies
+node_modules
+.pnpm-store
+.yarn
+.yarn-cache
+.npm
+
+# build outputs
+.next
+out
+dist
+build
+coverage
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# env / secrets
+.env
+.env.*
+!.env.example
+!.env.production
+!.env.production.local
+!.env.local
+
+# git / editor
+.git
+.gitignore
+.vscode
+.idea
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# docker
+Dockerfile*
+docker-compose*.yml
+
+# misc
+*.tgz
+*.tar
+*.zip
