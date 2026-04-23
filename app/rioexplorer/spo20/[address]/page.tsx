@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import {
+  RIODEX_SCREENER_ROUTE,
+  buildRioDexSurfaceHref,
+} from "@/lib/riodex/routes";
 
 type TokenMeta = {
   token_address: string;
@@ -217,10 +221,10 @@ export default function RioExplorerSpo20TokenPage() {
                 Back to Tokens
               </Link>
               <Link
-                href="/riodex/markets"
+                href={RIODEX_SCREENER_ROUTE}
                 className="rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/15"
               >
-                Markets
+                Screener
               </Link>
             </div>
           </div>
@@ -352,6 +356,7 @@ export default function RioExplorerSpo20TokenPage() {
                   <tbody>
                     {pairs.map((p) => {
                       const pairLabel = `${p.token0_symbol || p.token0}/${p.token1_symbol || p.token1}`;
+                      const pairRoutes = buildRioDexSurfaceHref(p.pair_id);
                       return (
                         <tr key={p.pair_id} className="border-t border-white/10">
                           <td className={clsx(td, "font-semibold text-white")}>
@@ -365,16 +370,16 @@ export default function RioExplorerSpo20TokenPage() {
                           <td className={td}>
                             <div className="flex flex-wrap gap-2">
                               <Link
-                                href={`/riodex/pool/${p.pair_id}`}
+                                href={pairRoutes.pool}
                                 className="rounded-xl border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold hover:bg-white/15"
                               >
                                 Open Terminal
                               </Link>
                               <Link
-                                href="/riodex/markets"
+                                href={RIODEX_SCREENER_ROUTE}
                                 className="rounded-xl border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold hover:bg-white/15"
                               >
-                                Markets
+                                Screener
                               </Link>
                             </div>
                           </td>

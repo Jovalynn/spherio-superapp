@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { buildCreateTokenLiquidityHref } from "@/lib/riodex/handoff";
+
 
 function shortAddr(addr?: string, left = 10, right = 6) {
   if (!addr) return "";
@@ -22,6 +25,8 @@ export type TokenCreateSuccessProps = {
   title?: string; // "CreateToken" | "Hybrid Launch" | "Pump.live"
   contractAddress: string;
   txHash: string;
+  pairAddress?: string | null;
+  tokenAddress?: string | null;
   symbol?: string;
   name?: string;
   totalSupplyHuman?: string; // user input supply (human)
@@ -39,8 +44,12 @@ export default function TokenCreateSuccess(props: TokenCreateSuccessProps) {
     name,
     totalSupplyHuman,
     logoUrl,
+    pairAddress,
+    tokenAddress,
     rioDexHref,
   } = props;
+
+  const router = useRouter();
 
   const [copiedWhat, setCopiedWhat] = useState<"" | "contract" | "tx">("");
 
@@ -61,7 +70,24 @@ export default function TokenCreateSuccess(props: TokenCreateSuccessProps) {
           </div>
         </div>
 
-        {logoUrl?.trim() ? (
+        {pairAddress ? (
+  <button
+    onClick={() =>
+      router.push(
+        buildCreateTokenLiquidityHref({
+          pairAddress,
+          tokenAddress,
+          txHash,
+        })
+      )
+    }
+    className="rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15"
+  >
+    Manage Liquidity
+  </button>
+) : null}
+   
+         {logoUrl?.trim() ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={logoUrl.trim()}

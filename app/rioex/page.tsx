@@ -1,376 +1,333 @@
 "use client";
 
 import Link from "next/link";
-import { useRioExMarkets } from "@/hooks/rioex/useRioExMarkets";
-import { RIOEX_FEE_COLLECTOR } from "@/lib/rioex/config";
-import ExchangeSurfaceRail from "@/components/exchange/ExchangeSurfaceRail";
+import { useEffect, useMemo, useState } from "react";
+import RegistryMarketStrip, {
+  RegistryStripMarket,
+} from "@/components/exchange/RegistryMarketStrip";
+import ExchangeSurfaceNav from "@/components/exchange/ExchangeSurfaceNav";
 
-function formatAmount(value: string | number, max = 6) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return String(value);
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: max,
-    minimumFractionDigits: 0,
-  }).format(num);
+type BoardResponse = {
+  ok: boolean;
+  markets?: RegistryStripMarket[];
+  error?: string;
+};
+
+function cardClass() {
+  return "rounded-[24px] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))] p-5 backdrop-blur-xl";
 }
 
-function formatInteger(value: string | number) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return String(value);
-  return new Intl.NumberFormat("en-US", {
+function buttonClass(active = false) {
+  return active
+    ? "rounded-2xl border border-fuchsia-400/28 bg-[linear-gradient(180deg,rgba(217,70,239,0.22),rgba(157,23,77,0.18))] px-4 py-2 text-sm font-semibold text-white"
+    : "rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-medium text-white/90";
+}
+
+function formatMoney(value: number) {
+  return `$${new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 0,
-  }).format(num);
+  }).format(Number.isFinite(value) ? value : 0)}`;
 }
 
-function shortAddr(v?: string | null, left = 10, right = 8) {
-  if (!v) return "—";
-  if (v.length <= left + right) return v;
-  return `${v.slice(0, left)}…${v.slice(-right)}`;
-}
-
-function formatTimestamp(value?: number | null) {
-  if (!value) return "Live index active";
+function formatDateTime(value?: string | null) {
+  if (!value) return "—";
   try {
-    const ms = value > 1_000_000_000_000 ? value : value * 1000;
-    return new Date(ms).toLocaleString();
+    return new Intl.DateTimeFormat("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(value));
   } catch {
-    return "Live index active";
+    return value;
   }
 }
 
-function marketStatusTone(status: string) {
-  return status === "live"
-    ? "rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-200"
-    : "rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-200";
-}
-
-function Badge({
-  label,
-  tone = "neutral",
+function PairMarks({
+  leftLogo,
+  rightLogo,
+  leftFallback,
+  rightFallback,
 }: {
-  label: string;
-  tone?: "neutral" | "good" | "primary";
+  leftLogo: string | null;
+  rightLogo: string | null;
+  leftFallback: string;
+  rightFallback: string;
 }) {
-  const cls =
-    tone === "good"
-      ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-200"
-      : tone === "primary"
-      ? "border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-200"
-      : "border-white/10 bg-white/5 text-white/75";
-
   return (
-    <span className={`rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.12em] ${cls}`}>
-      {label}
-    </span>
+    <div className="flex -space-x-3">
+      {leftLogo ? (
+        <img
+          src={leftLogo}
+          alt={leftFallback}
+          className="h-14 w-14 rounded-full border border-white/10 bg-black/20 object-cover"
+        />
+      ) : (
+        <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/10 text-sm font-semibold text-white">
+          {leftFallback.slice(0, 1)}
+        </div>
+      )}
+
+      {rightLogo ? (
+        <img
+          src={rightLogo}
+          alt={rightFallback}
+          className="h-14 w-14 rounded-full border border-white/10 bg-black/20 object-cover"
+        />
+      ) : (
+        <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/10 text-sm font-semibold text-white">
+          {rightFallback.slice(0, 1)}
+        </div>
+      )}
+    </div>
   );
 }
 
-export default function RioExPage() {
-  const { markets, summary, loading, error, refresh } = useRioExMarkets();
+export default function RioExHomePage() {
+  const [markets, setMarkets] = useState<RegistryStripMarket[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  const hasMarkets = markets.length > 0;
-  const canonicalMarket = markets.find((m) => m.label === "RIO / RUSD") || markets[0] || null;
+  async function load() {
+    try {
+      setError(null);
+      const response = await fetch(
+        "/api/rioex/markets?canonicalOnly=true&sort=liquidity",
+        { cache: "no-store" }
+      );
+      const raw = await response.text();
+      const json: BoardResponse | null = raw ? JSON.parse(raw) : null;
 
-  const canonicalBase = Number(canonicalMarket?.asset0Amount || "0");
-  const canonicalQuote = Number(canonicalMarket?.asset1Amount || "0");
-  const canonicalPrice = canonicalBase > 0 ? canonicalQuote / canonicalBase : 0;
+      if (!response.ok || !json?.ok) {
+        throw new Error(json?.error || "Failed to load RioEx surfaces.");
+      }
 
-  const canonicalLiquidityLabel = canonicalMarket
-    ? `${formatAmount(canonicalMarket.asset0Amount)} RIO / ${formatAmount(canonicalMarket.asset1Amount)} RUSD`
-    : "Unavailable";
+      setMarkets(json?.markets || []);
+    } catch (e: any) {
+      setMarkets([]);
+      setError(e?.message || "Failed to load RioEx surfaces.");
+    }
+  }
 
-  const canonicalLpShare = canonicalMarket
-    ? formatInteger(canonicalMarket.totalShare)
-    : "Unavailable";
+  useEffect(() => {
+    void load();
+  }, []);
 
-  const canonicalPoolAddress = canonicalMarket?.pairAddress || null;
-  const canonicalUpdatedAt = formatTimestamp(canonicalMarket?.createdAtTime);
+  const featured = useMemo(() => markets[0] || null, [markets]);
+  const integrityUpdatedAt =
+    featured && "liquidityUpdatedAt" in featured
+      ? ((featured as any).liquidityUpdatedAt || (featured as any).lastSwapTime || null)
+      : null;
 
   return (
-    <main className="min-h-screen bg-[#05070a] px-6 py-10 text-white">
-      <div className="mx-auto max-w-7xl space-y-8">
-        <ExchangeSurfaceRail />
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(157,23,77,0.12),transparent_24%),radial-gradient(circle_at_85%_18%,rgba(34,211,238,0.10),transparent_20%),linear-gradient(180deg,#04070d_0%,#060912_42%,#04070d_100%)] px-4 py-8 text-white sm:px-6 sm:py-10">
+      <div className="mx-auto max-w-[1500px] space-y-8">
+        <RegistryMarketStrip markets={markets} activeSurface="rioex" />
 
-        <section className="rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur">
-          <p className="text-xs uppercase tracking-[0.24em] text-white/50">RioEx</p>
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-            Exchange, Discovery, Market Intelligence
-          </h1>
-          <p className="mt-4 max-w-4xl text-sm leading-7 text-white/65">
-            RioEx is the market intelligence and discovery layer above RioDex — the surface where
-            canonical markets are identified, verified, monitored, and eventually distributed across
-            the broader market ecosystem.
-          </p>
+        <ExchangeSurfaceNav
+          product="rioex"
+          activeKey="rioex"
+          featured={featured}
+          title="RioEx Discovery Surfaces"
+          subtitle="One shared horizontal route layer now sits above RioEx discovery. This is now part of the same family rhythm as RioDex core surfaces while RioEx keeps its own market-intelligence identity."
+        />
 
-          <div className="mt-6 grid gap-4 md:grid-cols-5">
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">
-                Markets
-              </div>
-              <div className="mt-2 text-2xl font-semibold">{summary.totalMarkets}</div>
-              <div className="mt-1 text-xs text-white/45">Factory-discovered pairs</div>
+        {featured ? (
+          <div className="rounded-[22px] border border-cyan-400/16 bg-cyan-500/6 px-5 py-4 text-sm text-white/85">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="rounded-full border border-cyan-400/25 bg-cyan-400/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300">
+                Integrity Truth
+              </span>
+              {featured.isCanonical ? (
+                <span className="rounded-full border border-fuchsia-400/25 bg-fuchsia-500/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-fuchsia-200">
+                  Canonical
+                </span>
+              ) : null}
+              {featured.isLive ? (
+                <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
+                  Live
+                </span>
+              ) : null}
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">
-                Live Markets
+            <div className="mt-3 grid gap-2 text-sm text-white/75 sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                Registry TVL:{" "}
+                <span className="font-semibold text-white">
+                  {formatMoney(featured.liquidityUsd)}
+                </span>
               </div>
-              <div className="mt-2 text-2xl font-semibold">{summary.liveMarkets}</div>
-              <div className="mt-1 text-xs text-white/45">Canonical execution venues resolved</div>
+              <div>
+                Liquidity Source:{" "}
+                <span className="font-semibold text-white">
+                  {"liquiditySource" in featured ? ((featured as any).liquiditySource || "unresolved") : "unresolved"}
+                </span>
+              </div>
+              <div>
+                Fee Policy:{" "}
+                <span className="font-semibold text-white">
+                  {"feePolicy" in featured ? ((featured as any).feePolicy || "—") : "—"}
+                </span>
+              </div>
+              <div>
+                Treasury Recipient:{" "}
+                <span className="font-semibold text-white">
+                  {"feeRecipientAddress" in featured && (featured as any).feeRecipientAddress
+                    ? String((featured as any).feeRecipientAddress)
+                        .slice(0, 12) + "…" + String((featured as any).feeRecipientAddress).slice(-10)
+                    : "—"}
+                </span>
+              </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">
-                Canonical Price
+            <div className="mt-2 text-xs text-white/50">
+              Last registry update: {formatDateTime(integrityUpdatedAt)}
+            </div>
+          </div>
+        ) : null}
+
+        <section className="rounded-[34px] border border-white/10 bg-[linear-gradient(180deg,rgba(37,10,24,0.82),rgba(10,9,18,0.94))] p-6 backdrop-blur-2xl shadow-[0_24px_80px_rgba(0,0,0,0.34)] sm:p-8">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.24em] text-white/50">
+                RioEx • Discovery Layer
               </div>
-              <div className="mt-2 text-2xl font-semibold">
-                {summary.canonicalPrice > 0 ? formatAmount(summary.canonicalPrice, 6) : "—"}
-              </div>
-              <div className="mt-1 text-xs text-white/45">RUSD per RIO</div>
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+                Registry-backed Exchange Intelligence
+              </h1>
+              <p className="mt-4 max-w-4xl text-sm leading-7 text-white/68">
+                RioEx now resolves market discovery, featured market identity,
+                routing, liquidity valuation, fee policy, and treasury routing
+                from the same authoritative registry layer that powers the
+                broader exchange surfaces.
+              </p>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">
-                Visible Liquidity
-              </div>
-              <div className="mt-2 text-lg font-semibold">{canonicalLiquidityLabel}</div>
-              <div className="mt-1 text-xs text-white/45">Canonical displayed liquidity</div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">
-                Treasury
-              </div>
-              <div className="mt-2 text-sm font-medium text-white">
-                {shortAddr(RIOEX_FEE_COLLECTOR, 12, 10)}
-              </div>
-              <div className="mt-1 text-xs text-white/45">Unified exchange fee collector</div>
+            <div className="flex flex-wrap gap-3">
+              <Link href="/rioex/markets" className={buttonClass(true)}>
+                Open Markets Board
+              </Link>
+              <button type="button" onClick={() => void load()} className={buttonClass(false)}>
+                Refresh RioEx
+              </button>
             </div>
           </div>
 
-          {canonicalMarket ? (
-            <div className="mt-6 rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(92,14,38,0.22),rgba(18,10,14,0.84))] p-6">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <div className="text-xs uppercase tracking-[0.22em] text-white/45">
-                    Canonical Market
-                  </div>
-                  <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white">
-                    RIO / RUSD
-                  </h2>
-                  <p className="mt-3 max-w-3xl text-sm leading-7 text-white/65">
-                    The verified primary market for RIO against RUSD — the canonical execution venue
-                    surfaced by RioEx and settled through RioDex.
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Badge label="Canonical" tone="primary" />
-                  <Badge label="Verified" tone="good" />
-                  <Badge label="Live" tone="good" />
-                  <Badge label="Indexed" tone="neutral" />
-                </div>
-              </div>
-
-              <div className="mt-6 grid gap-4 md:grid-cols-5">
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">Price</div>
-                  <div className="mt-2 text-xl font-semibold text-white">
-                    {canonicalPrice > 0 ? `${formatAmount(canonicalPrice, 6)} RUSD` : "—"}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">Liquidity</div>
-                  <div className="mt-2 text-lg font-semibold text-white">{canonicalLiquidityLabel}</div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">LP Share</div>
-                  <div className="mt-2 text-xl font-semibold text-white">{canonicalLpShare}</div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">Pool</div>
-                  <div className="mt-2 break-all font-mono text-xs text-white/80">
-                    {canonicalPoolAddress || "Unavailable"}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">Last Update</div>
-                  <div className="mt-2 text-sm font-medium text-white">{canonicalUpdatedAt}</div>
-                </div>
-              </div>
+          {error ? (
+            <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-5 text-sm text-amber-200">
+              {error}
             </div>
           ) : null}
 
-          <div className="mt-6 flex flex-wrap gap-3">
-            <button
-              onClick={() => void refresh()}
-              className="rounded-2xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/15"
-            >
-              Refresh Markets
-            </button>
-
-            <Link
-              href="/riodex"
-              className="rounded-2xl border border-white/10 bg-black/20 px-4 py-2 text-sm font-medium text-white/85 transition hover:bg-black/30"
-            >
-              Open RioDex
-            </Link>
-
-            <Link
-              href="/riodex/pools"
-              className="rounded-2xl border border-white/10 bg-black/20 px-4 py-2 text-sm font-medium text-white/85 transition hover:bg-black/30"
-            >
-              Open Pools
-            </Link>
-          </div>
-        </section>
-
-        {loading ? (
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-white/70">
-            Loading RioEx markets...
-          </div>
-        ) : null}
-
-        {error ? (
-          <div className="rounded-3xl border border-amber-500/20 bg-amber-500/10 p-5 text-sm text-amber-200">
-            {error}
-          </div>
-        ) : null}
-
-        {!hasMarkets && !loading ? (
-          <section className="rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur">
-            <div className="max-w-3xl">
-              <p className="text-xs uppercase tracking-[0.22em] text-white/45">
-                Market bootstrap
-              </p>
-              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-white">
-                RioEx is live structurally, awaiting market feed expansion
-              </h2>
-              <p className="mt-4 text-sm leading-7 text-white/65">
-                The discovery surface is now active. As additional canonical markets are deployed,
-                RioEx will evolve into the market-facing registry, analytics, and distribution layer
-                above RioDex.
-              </p>
-            </div>
-          </section>
-        ) : null}
-
-        {hasMarkets ? (
-          <>
-            <section className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <p className="text-xs uppercase tracking-[0.18em] text-white/45">
-                  Visible liquidity
-                </p>
-                <h2 className="mt-3 text-2xl font-semibold">
-                  {formatAmount(summary.totalVisibleAsset0)} RIO
-                </h2>
-                <p className="mt-2 text-sm text-white/60">
-                  Aggregate displayed first-side liquidity across resolved markets.
-                </p>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <p className="text-xs uppercase tracking-[0.18em] text-white/45">
-                  Visible quote-side
-                </p>
-                <h2 className="mt-3 text-2xl font-semibold">
-                  {formatAmount(summary.totalVisibleAsset1)} RUSD
-                </h2>
-                <p className="mt-2 text-sm text-white/60">
-                  Aggregate displayed second-side liquidity across resolved markets.
-                </p>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-                <p className="text-xs uppercase tracking-[0.18em] text-white/45">
-                  Market readiness
-                </p>
-                <h2 className="mt-3 text-2xl font-semibold">
-                  {summary.liveMarkets} / {summary.totalMarkets}
-                </h2>
-                <p className="mt-2 text-sm text-white/60">
-                  Live markets relative to total discovered registry entries.
-                </p>
-              </div>
-            </section>
-
-            <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 backdrop-blur">
-              <div className="grid grid-cols-12 gap-4 border-b border-white/10 px-6 py-4 text-xs uppercase tracking-[0.2em] text-white/45">
-                <div className="col-span-4">Market</div>
-                <div className="col-span-2">Liquidity</div>
-                <div className="col-span-2">Price</div>
-                <div className="col-span-2">LP Share</div>
-                <div className="col-span-1">Status</div>
-                <div className="col-span-1">Open</div>
-              </div>
-
-              {markets.map((market) => {
-                const base = Number(market.asset0Amount || "0");
-                const quote = Number(market.asset1Amount || "0");
-                const price = base > 0 ? quote / base : 0;
-                const isCanonical = market.pairAddress === canonicalPoolAddress;
-
-                return (
-                  <div
-                    key={market.pairKey}
-                    className="grid grid-cols-12 gap-4 border-b border-white/5 px-6 py-5 last:border-b-0"
-                  >
-                    <div className="col-span-4">
-                      <div className="flex items-center gap-2">
-                        <div className="font-medium text-white">{market.label}</div>
-                        {isCanonical ? <Badge label="Canonical" tone="primary" /> : null}
+          {featured ? (
+            <div className="mt-6 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+              <div className="rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    <PairMarks
+                      leftLogo={featured.baseLogoUrl}
+                      rightLogo={featured.quoteLogoUrl}
+                      leftFallback={featured.baseSymbol}
+                      rightFallback={featured.quoteSymbol}
+                    />
+                    <div>
+                      <div className="text-3xl font-semibold tracking-tight text-white">
+                        {featured.displaySymbol}
                       </div>
-                      <div className="mt-1 text-xs text-white/45">
-                        {market.pairAddress ? shortAddr(market.pairAddress, 16, 12) : market.pairKey}
+                      <div className="mt-2 text-xs uppercase tracking-[0.18em] text-white/45">
+                        {featured.canonicalSymbol}
                       </div>
-                      <div className="mt-2 text-[11px] text-white/35">
-                        {isCanonical
-                          ? "Verified canonical execution venue"
-                          : market.createdAtHeight
-                          ? `Created at height ${market.createdAtHeight}`
-                          : "Market metadata active"}
+                      <div className="mt-2 text-sm text-white/60">
+                        Featured registry market
                       </div>
-                    </div>
-
-                    <div className="col-span-2 text-sm text-white/75">
-                      {formatAmount(market.asset0Amount)} RIO / {formatAmount(market.asset1Amount)} RUSD
-                    </div>
-
-                    <div className="col-span-2 text-sm text-white/75">
-                      {price > 0 ? `${formatAmount(price, 6)} RUSD` : "—"}
-                    </div>
-
-                    <div className="col-span-2 text-sm text-white/75">
-                      {formatInteger(market.totalShare)}
-                    </div>
-
-                    <div className="col-span-1">
-                      <span className={marketStatusTone(market.status)}>{market.status}</span>
-                    </div>
-
-                    <div className="col-span-1">
-                      {market.pairAddress ? (
-                        <Link
-                          href={`/riodex/pool/${market.pairAddress}`}
-                          className="inline-flex rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/15"
-                        >
-                          View
-                        </Link>
-                      ) : (
-                        <span className="text-xs text-white/35">—</span>
-                      )}
                     </div>
                   </div>
-                );
-              })}
-            </section>
-          </>
-        ) : null}
+
+                  <div className="flex flex-col gap-2 text-right">
+                    {featured.isCanonical ? (
+                      <span className="rounded-full border border-fuchsia-400/25 bg-fuchsia-500/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-fuchsia-200">
+                        Canonical
+                      </span>
+                    ) : null}
+                    {featured.isLive ? (
+                      <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
+                        Live
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-3 md:grid-cols-3">
+                  <div className={cardClass()}>
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-white/45">
+                      Liquidity
+                    </div>
+                    <div className="mt-2 text-xl font-semibold text-white">
+                      {formatMoney(featured.liquidityUsd)}
+                    </div>
+                  </div>
+
+                  <div className={cardClass()}>
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-white/45">
+                      Fee
+                    </div>
+                    <div className="mt-2 text-xl font-semibold text-white">
+                      {"feeBps" in featured && typeof (featured as any).feeBps === "number" ? `${(featured as any).feeBps} bps` : "—"}
+                    </div>
+                  </div>
+
+                  <div className={cardClass()}>
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-white/45">
+                      Last Activity
+                    </div>
+                    <div className="mt-2 text-sm font-semibold text-white">
+                      {formatDateTime((featured as any).lastSwapTime)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <Link href={featured.routes.assetTerminal} className={buttonClass(true)}>
+                    Open Trade Terminal
+                  </Link>
+                  <Link href={featured.routes.swap} className={buttonClass(false)}>
+                    Open Swap
+                  </Link>
+                  <Link href={featured.routes.pool} className={buttonClass(false)}>
+                    Open Pool
+                  </Link>
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                <div className={cardClass()}>
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">
+                    What RioEx now resolves
+                  </div>
+                  <div className="mt-4 grid gap-3 text-sm text-white/70">
+                    <div>Market identity from canonical pair registry</div>
+                    <div>Liquidity valuation from authoritative backend truth</div>
+                    <div>Fee routing metadata from treasury-multisig policy</div>
+                    <div>Execution routing into terminal, swap, and pool surfaces</div>
+                  </div>
+                </div>
+
+                <div className={cardClass()}>
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">
+                    Next RioEx expansion
+                  </div>
+                  <div className="mt-4 text-sm leading-7 text-white/70">
+                    Finish the remaining RioEx discovery and market-intelligence
+                    surfaces on top of the same registry layer, complete the
+                    Trade restoration, then apply the later Binance / Bitget
+                    mirroring cues after the app-page redesign.
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-6 text-sm text-white/70">
+              No featured RioEx market is available yet.
+            </div>
+          )}
+        </section>
       </div>
     </main>
   );

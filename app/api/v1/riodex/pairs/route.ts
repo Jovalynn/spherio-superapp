@@ -3,34 +3,74 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const INDEXER_BASE =
-  process.env.INDEXER_BASE_URL ||
-  process.env.NEXT_PUBLIC_INDEXER_BASE_URL ||
-  "http://indexer:4000";
+function candidateIndexerBaseUrls() {
+  const candidates = [
+    process.env.SPHERIO_INDEXER_URL,
+    process.env.INDEXER_URL,
+    process.env.NEXT_PUBLIC_INDEXER_URL,
+    process.env.INDEXER_BASE_URL,
+    process.env.NEXT_PUBLIC_INDEXER_BASE_URL,
+    "http://localhost:4000",
+    "http://127.0.0.1:4000",
+    "http://spherio_indexer:4000",
+    "http://indexer:4000",
+    "http://host.docker.internal:4000",
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(candidates));
+}
 
 export async function GET(req: NextRequest) {
-  try {
-    const upstream = await fetch(`${INDEXER_BASE}/api/riodex/pairs`, {
-      cache: "no-store",
-      headers: { accept: "application/json" },
-    });
+  const errors: string[] = [];
 
-    const text = await upstream.text();
+  for (const baseUrl of candidateIndexerBaseUrls()) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
 
-    return new NextResponse(text, {
-      status: upstream.status,
-      headers: {
-        "content-type": upstream.headers.get("content-type") || "application/json",
-        "cache-control": "no-store",
-      },
-    });
-  } catch (error: any) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: error?.message || "Failed to fetch RioDex pairs",
-      },
-      { status: 500 }
-    );
+    try {
+      const upstream = new URL("/api/riodex/pairs", baseUrl);
+
+      req.nextUrl.searchParams.forEach((value, key) => {
+        upstream.searchParams.set(key, value);
+      });
+
+      const response = await fetch(upstream.toString(), {
+        method: "GET",
+        cache: "no-store",
+        signal: controller.signal,
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+      const raw = await response.text();
+      clearTimeout(timeout);
+
+      return new NextResponse(raw, {
+        status: response.status,
+        headers: {
+          "content-type":
+            response.headers.get("content-type") ||
+            "application/json; charset=utf-8",
+          "cache-control": "no-store",
+          "x-spherio-upstream": baseUrl,
+        },
+      });
+    } catch (error: any) {
+      clearTimeout(timeout);
+      errors.push(`${baseUrl} :: ${error?.message || "fetch_failed"}`);
+    }
   }
+
+  return NextResponse.json(
+    {
+      ok: false,
+      error: "Failed to fetch RioDex pairs",
+      attempted_upstreams: candidateIndexerBaseUrls(),
+      details: errors,
+    },
+    { status: 502 }
+  );
 }

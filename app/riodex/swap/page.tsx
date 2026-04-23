@@ -1,11 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChevronDown, Clock3 } from "lucide-react";
-import { getKeplrSigner, getSigningClient } from "@/lib/cosm";
-import { getTokenMeta } from "@/lib/tokenRegistry";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { SigningCosmWasmClient } from "@cosmjs/cosmwasm-stargate";
+import { GasPrice } from "@cosmjs/stargate";
+import {
+  buildTokenRegistryMap,
+  getRioDexTokenRegistryBatch,
+  getRegistryLogoUrl,
+  getRegistryPairLabel,
+} from "@/lib/riodex/token-registry";
+import ExchangeSurfaceNav from "@/components/exchange/ExchangeSurfaceNav";
+import {
+  RIODEX_HOME_ROUTE,
+  RIODEX_SCREENER_ROUTE,
+  RIODEX_SWAP_ROUTE,
+  RIODEX_LIQUIDITY_ROUTE,
+  buildRioDexSurfaceHref,
+} from "@/lib/riodex/routes";
 
 type PairMeta = {
   pair_address: string;
@@ -91,6 +105,7 @@ type SettlementReceipt = {
   height?: string | number | null;
   gasUsed?: string | number | null;
   error?: string | null;
+  rpcEndpoint?: string | null;
 };
 
 type TvSeries = {
@@ -103,24 +118,26 @@ type TvSeries = {
   v?: number[];
 };
 
+type CandleBucket = {
+  pair_id?: string;
+  resolution?: string;
+  bucket_start?: string;
+  open?: string;
+  high?: string;
+  low?: string;
+  close?: string;
+  volume0?: string;
+  volume1?: string;
+  trades?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 type CandleResponse = {
   ok?: boolean;
   pair_id?: string;
   resolution?: string;
-  candles?: Array<{
-    pair_id?: string;
-    resolution?: string;
-    bucket_start?: string;
-    open?: string;
-    high?: string;
-    low?: string;
-    close?: string;
-    volume0?: string;
-    volume1?: string;
-    trades?: string;
-    created_at?: string;
-    updated_at?: string;
-  }>;
+  candles?: CandleBucket[];
   tv?: TvSeries;
 };
 
@@ -133,6 +150,79 @@ type ChartPoint = {
   volume: number;
 };
 
+
+type RegistryMarketLite = {
+  pairAddress: string;
+  displaySymbol: string;
+  canonicalSymbol: string;
+  baseSymbol: string;
+  quoteSymbol: string;
+  baseLogoUrl: string | null;
+  quoteLogoUrl: string | null;
+  liquidityUsd: number;
+  feeBps?: number | null;
+  isCanonical: boolean;
+  isLive: boolean;
+  routes: {
+    assetTerminal: string;
+    marketBoard: string;
+    hero: string;
+    pool: string;
+    swap: string;
+    liquidity: string;
+  };
+};
+
+type RegistryPairContext = {
+  pairAddress: string;
+  displaySymbol: string;
+  canonicalSymbol: string;
+  baseAssetId: string;
+  quoteAssetId: string;
+  baseSymbol: string;
+  quoteSymbol: string;
+  baseDisplayName: string;
+  quoteDisplayName: string;
+  baseLogoUrl: string | null;
+  quoteLogoUrl: string | null;
+  baseAssetType?: string | null;
+  quoteAssetType?: string | null;
+  feeBps: number;
+  isCanonical: boolean;
+  isLive: boolean;
+  liquidityUsd: number;
+  liquidityHeight: string | number | null;
+  liquidityTime: string | null;
+  liquiditySource: string | null;
+  liquidityUpdatedAt: string | null;
+  lastSwapTime: string | null;
+  lastSwapTxHash: string | null;
+  feeRecipientAddress: string | null;
+  feePolicy: string | null;
+  quoteConvention: "asset_1_per_asset_0";
+  routes: {
+    assetTerminal: string;
+    marketBoard: string;
+    hero: string;
+    pool: string;
+    swap: string;
+    liquidity: string;
+  };
+  source: string;
+};
+
+type RegistryBoardResponse = {
+  ok?: boolean;
+  markets?: RegistryMarketLite[];
+};
+
+type RegistryPairResponse = {
+  ok?: boolean;
+  pair?: RegistryPairContext;
+  item?: RegistryPairContext;
+};
+
+const CHAIN_ID = "spherio-1";
 const CANONICAL_PAIR_ADDR =
   "rio1vh2p4x96m0qcvhzh3g86dxg9zu8pzwj4xuuwyf2z8dpmshcf0qmsgf7tp6";
 const RUSD_CONTRACT =
@@ -141,17 +231,25 @@ const RIO_DENOM = "urio";
 const TREASURY_FEE_COLLECTOR =
   "rio1nnhxsa49cc5e9vyxj6r6s3hwlkymcrletx7wch";
 
+const RIO_LOGO_FALLBACK =
+  "https://avatars.githubusercontent.com/u/175851528?s=400&u=b0c1a871d1e739566c4c2bf96a97720fedfc03ab&v=4";
+const RUSD_LOGO_FALLBACK =
+  "https://raw.githubusercontent.com/Lerivee/RUSD/refs/heads/main/Untitled%20design.png";
+
 const WALLET_STORAGE_KEY = "spherio_wallet_address";
 const WALLET_EVENT = "spherio:wallet-changed";
-
-const RIO_LOGO =
-  "https://avatars.githubusercontent.com/u/175851528?s=400&u=b0c1a871d1e739566c4c2bf96a97720fedfc03ab&v=4";
-const RUSD_LOGO =
-  "https://raw.githubusercontent.com/Lerivee/RUSD/refs/heads/main/Untitled%20design.png";
 
 function formatNum(value: number, max = 6) {
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: max,
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function formatUsd(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
   }).format(Number.isFinite(value) ? value : 0);
 }
 
@@ -185,11 +283,17 @@ function formatClock(unixSeconds?: number | null) {
   }
 }
 
-function assetLabel(v?: string | null) {
-  if (!v) return "—";
-  if (v === "urio" || v === "RIO") return "RIO";
-  if (v === "RUSD" || v === RUSD_CONTRACT) return "RUSD";
-  return v;
+function getAssetSymbol(v?: string | null) {
+  const value = String(v || "").trim();
+  if (!value) return "—";
+  if (value === "RIO" || value === RIO_DENOM) return "RIO";
+  if (value === "RUSD" || value === RUSD_CONTRACT) return "RUSD";
+  if (value.startsWith("rio1")) return shortAddr(value, 8, 6);
+  return value;
+}
+
+function buildTruthPairLabel(asset0Id?: string | null, asset1Id?: string | null) {
+  return `${getAssetSymbol(asset0Id)} / ${getAssetSymbol(asset1Id)}`;
 }
 
 function shortAddr(v?: string | null, left = 8, right = 6) {
@@ -208,6 +312,31 @@ function fromBaseUnits(baseAmount?: string | number | null, decimals = 6) {
   const n = Number(baseAmount ?? 0);
   if (!Number.isFinite(n)) return 0;
   return n / 10 ** decimals;
+}
+
+function isStableAsset(assetId?: string | null) {
+  const s = String(assetId || "").toLowerCase();
+  return (
+    s.includes("rusd") ||
+    s.includes("usdc") ||
+    s.includes("usdt") ||
+    s.includes("dai")
+  );
+}
+
+function estimateLiquidityValue(
+  pair: PairMeta | null,
+  latestLiquidity: LiquiditySnapshot | null
+) {
+  if (!pair || !latestLiquidity) return 0;
+
+  const reserve0 = fromBaseUnits(latestLiquidity.reserve_0);
+  const reserve1 = fromBaseUnits(latestLiquidity.reserve_1);
+
+  if (isStableAsset(pair.asset_1_id)) return reserve1 * 2;
+  if (isStableAsset(pair.asset_0_id)) return reserve0 * 2;
+
+  return reserve1;
 }
 
 function maxSpreadFromSlippage(slippagePct: number) {
@@ -237,17 +366,6 @@ function writeStoredWalletAddress(address: string | null) {
       detail: { address },
     })
   );
-}
-
-function normalizeExecutionError(error: any) {
-  const message = String(error?.message || "Transaction failed");
-  if (/rejected|denied|declined/i.test(message)) {
-    return "Signature rejected in wallet.";
-  }
-  if (/insufficient funds/i.test(message)) {
-    return "Insufficient funds for swap amount or network fee.";
-  }
-  return message;
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -289,26 +407,14 @@ function shell(
   return tones[tone];
 }
 
-function IconPill({
-  children,
-  active = false,
-}: {
-  children: ReactNode;
-  active?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      className={[
-        "flex h-10 w-10 items-center justify-center rounded-xl border transition",
-        active
-          ? "border-cyan-300/30 bg-cyan-400/10 text-cyan-200"
-          : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]",
-      ].join(" ")}
-    >
-      {children}
-    </button>
-  );
+function truthBadge(tone: "live" | "neutral" | "warning" = "neutral") {
+  if (tone === "live") {
+    return "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-200";
+  }
+  if (tone === "warning") {
+    return "rounded-full border border-amber-300/20 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-100";
+  }
+  return "rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-300";
 }
 
 function QuickAmountButton({
@@ -371,31 +477,32 @@ function SimpleStat({
 }
 
 function TokenAvatar({
+  registryMap,
   assetId,
+  label,
   size = 36,
 }: {
+  registryMap: ReturnType<typeof buildTokenRegistryMap>;
   assetId?: string | null;
+  label?: string;
   size?: number;
 }) {
-  const meta = getTokenMeta(assetId);
+  const normalized = String(assetId || "").trim();
+  const symbol = label || getAssetSymbol(normalized);
 
-  if (assetId === RUSD_CONTRACT) {
+  const logoUrl =
+    getRegistryLogoUrl(registryMap, normalized) ||
+    (normalized === RUSD_CONTRACT
+      ? RUSD_LOGO_FALLBACK
+      : normalized === RIO_DENOM
+      ? RIO_LOGO_FALLBACK
+      : null);
+
+  if (logoUrl) {
     return (
       <img
-        src={RUSD_LOGO}
-        alt="RUSD"
-        width={size}
-        height={size}
-        className="rounded-full border border-white/10 bg-[#09132e] object-cover"
-      />
-    );
-  }
-
-  if (meta.kind === "image" && meta.logoUrl) {
-    return (
-      <img
-        src={meta.logoUrl}
-        alt={meta.symbol}
+        src={logoUrl}
+        alt={symbol}
         width={size}
         height={size}
         className="rounded-full border border-white/10 bg-[#09132e] object-cover"
@@ -408,9 +515,202 @@ function TokenAvatar({
       style={{ width: size, height: size }}
       className="flex items-center justify-center rounded-full border border-white/10 bg-[#202d58] text-xs font-semibold text-white"
     >
-      {meta.symbol.slice(0, 1)}
+      {symbol.slice(0, 1)}
     </div>
   );
+}
+
+function parseTvSeries(tv?: TvSeries | null): ChartPoint[] {
+  const t = tv?.t || [];
+  const o = tv?.o || [];
+  const h = tv?.h || [];
+  const l = tv?.l || [];
+  const c = tv?.c || [];
+  const v = tv?.v || [];
+
+  const size = Math.min(t.length, o.length, h.length, l.length, c.length);
+
+  return Array.from({ length: size })
+    .map((_, idx) => ({
+      time: Number(t[idx]),
+      open: Number(o[idx] ?? 0),
+      high: Number(h[idx] ?? 0),
+      low: Number(l[idx] ?? 0),
+      close: Number(c[idx] ?? 0),
+      volume: Number(v[idx] ?? 0),
+    }))
+    .filter(
+      (p) =>
+        Number.isFinite(p.time) &&
+        Number.isFinite(p.open) &&
+        Number.isFinite(p.high) &&
+        Number.isFinite(p.low) &&
+        Number.isFinite(p.close) &&
+        p.time > 0 &&
+        p.open > 0 &&
+        p.high > 0 &&
+        p.low > 0 &&
+        p.close > 0
+    );
+}
+
+function parseCandleBuckets(candles?: CandleBucket[] | null): ChartPoint[] {
+  if (!candles?.length) return [];
+
+  return candles
+    .map((row) => {
+      const timeMs = row.bucket_start ? new Date(row.bucket_start).getTime() : NaN;
+      const volume1 = Number(row.volume1 ?? 0);
+      const volume0 = Number(row.volume0 ?? 0);
+
+      return {
+        time: Number.isFinite(timeMs) ? Math.floor(timeMs / 1000) : 0,
+        open: Number(row.open ?? 0),
+        high: Number(row.high ?? 0),
+        low: Number(row.low ?? 0),
+        close: Number(row.close ?? 0),
+        volume: Number.isFinite(volume1) && volume1 > 0 ? volume1 : volume0,
+      };
+    })
+    .filter(
+      (p) =>
+        Number.isFinite(p.time) &&
+        Number.isFinite(p.open) &&
+        Number.isFinite(p.high) &&
+        Number.isFinite(p.low) &&
+        Number.isFinite(p.close) &&
+        p.time > 0 &&
+        p.open > 0 &&
+        p.high > 0 &&
+        p.low > 0 &&
+        p.close > 0
+    );
+}
+
+function sanitizeChartPoints(points: ChartPoint[]): ChartPoint[] {
+  if (!points.length) return [];
+
+  const byTime = new Map<number, ChartPoint>();
+  for (const point of points) {
+    byTime.set(point.time, point);
+  }
+
+  const sorted = Array.from(byTime.values()).sort((a, b) => a.time - b.time);
+  const closes = sorted.map((p) => p.close).sort((a, b) => a - b);
+  const median = closes[Math.floor(closes.length / 2)] || 0;
+
+  return sorted.filter((p) => {
+    const pointMax = Math.max(p.open, p.high, p.low, p.close);
+    const pointMin = Math.min(p.open, p.high, p.low, p.close);
+
+    if (pointMin <= 0) return false;
+    if (pointMax / pointMin > 50) return false;
+    if (median > 0 && (pointMax > median * 12 || pointMin < median / 12)) return false;
+
+    return true;
+  });
+}
+
+function chartQuality(points: ChartPoint[]) {
+  if (!points.length) return -999;
+
+  const highs = points.map((p) => p.high);
+  const lows = points.map((p) => p.low);
+  const max = Math.max(...highs);
+  const min = Math.min(...lows);
+  const ratio = min > 0 ? max / min : 9999;
+
+  let score = points.length * 10;
+  if (ratio > 8) score -= 40;
+  if (ratio > 4) score -= 20;
+  if (points.length < 4) score -= 15;
+
+  return score;
+}
+
+function normalizeExecutionError(error: any, rpcEndpoint?: string | null) {
+  const message = String(error?.message || "Transaction failed");
+
+  if (/rejected|denied|declined/i.test(message)) {
+    return "Signature rejected in wallet.";
+  }
+
+  if (/insufficient funds/i.test(message)) {
+    return "Insufficient funds for swap amount or network fee.";
+  }
+
+  if (/failed to fetch|networkerror|fetch/i.test(message)) {
+    return rpcEndpoint
+      ? `Unable to reach RPC endpoint ${rpcEndpoint}. Ensure the node RPC is live and browser-accessible.`
+      : "Unable to reach the browser RPC endpoint. Ensure the node RPC is live and browser-accessible.";
+  }
+
+  return message;
+}
+
+async function resolveBrowserRpcEndpoint() {
+  const runtimeCandidates = [
+    process.env.NEXT_PUBLIC_SPHERIO_RPC,
+    process.env.NEXT_PUBLIC_RPC_URL,
+    typeof window !== "undefined" ? `${window.location.protocol}//127.0.0.1:26657` : null,
+    typeof window !== "undefined" ? `${window.location.protocol}//localhost:26657` : null,
+    typeof window !== "undefined"
+      ? `${window.location.protocol}//${window.location.hostname}:26657`
+      : null,
+  ]
+    .filter(Boolean)
+    .map((v) => String(v).replace(/\/+$/, ""));
+
+  const candidates = Array.from(new Set(runtimeCandidates));
+
+  for (const candidate of candidates) {
+    try {
+      const res = await fetch(`${candidate}/status`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      if (res.ok) return candidate;
+    } catch {}
+  }
+
+  return candidates[0] || "http://127.0.0.1:26657";
+}
+
+async function getBrowserSigningContext() {
+  if (typeof window === "undefined") {
+    throw new Error("Wallet execution requires browser context.");
+  }
+
+  const w = window as any;
+
+  if (!w.keplr || !w.getOfflineSigner) {
+    throw new Error("Keplr wallet is not available in this browser.");
+  }
+
+  await w.keplr.enable(CHAIN_ID);
+
+  const signer = w.getOfflineSigner(CHAIN_ID);
+  const accounts = await signer.getAccounts();
+
+  if (!accounts?.length) {
+    throw new Error("No wallet account found for Spherio.");
+  }
+
+  const rpcEndpoint = await resolveBrowserRpcEndpoint();
+  const client = await SigningCosmWasmClient.connectWithSigner(
+    rpcEndpoint,
+    signer,
+    {
+      gasPrice: GasPrice.fromString("0urio"),
+    }
+  );
+
+  return {
+    signer,
+    client,
+    address: accounts[0].address,
+    rpcEndpoint,
+  };
 }
 
 function TruthChart({
@@ -419,18 +719,12 @@ function TruthChart({
   resolutionLabel,
   requestedResolution,
   fallbackPrice,
-  fallbackLiquidity,
-  fallbackUpdatedAt,
-  swapCount,
 }: {
   data: ChartPoint[];
   pairLabel: string;
   resolutionLabel: string;
   requestedResolution: string;
   fallbackPrice: number | null;
-  fallbackLiquidity: string | null;
-  fallbackUpdatedAt: string | null;
-  swapCount: number;
 }) {
   const width = 940;
   const height = 470;
@@ -442,28 +736,133 @@ function TruthChart({
   const innerHeight = height - padTop - padBottom;
 
   if (!data.length) {
+    const priceY =
+      fallbackPrice !== null ? padTop + innerHeight * 0.42 : padTop + innerHeight * 0.5;
+
     return (
-      <div className="rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(10,18,37,0.56),rgba(10,18,37,0.20))] p-6">
-        <div className="flex h-[430px] flex-col items-center justify-center text-center">
-          <div className="text-3xl font-semibold text-white">{pairLabel}</div>
-          <div className="mt-2 text-sm text-slate-300">
-            Candle board is sparse, but reserve price, liquidity, and recent swaps remain live.
+      <div className="rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(10,18,37,0.58),rgba(10,18,37,0.16))] p-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-cyan-200">
+              {resolutionLabel}
+            </div>
+            <div className="text-sm text-slate-300">
+             No market activity yet.
+            </div>
           </div>
 
-          <div className="mt-8 grid w-full max-w-3xl gap-3 md:grid-cols-4">
-            <SimpleStat
-              label="Live Price"
-              value={fallbackPrice !== null ? formatNum(fallbackPrice, 6) : "—"}
-            />
-            <SimpleStat label="Liquidity" value={fallbackLiquidity || "—"} />
-            <SimpleStat label="Recent Swaps" value={String(swapCount)} />
-            <SimpleStat label="Updated" value={formatDateTime(fallbackUpdatedAt)} />
-          </div>
-
-          <div className="mt-6 text-xs text-slate-500">
-            Requested {requestedResolution} • currently serving {resolutionLabel}
+          <div className="text-xs text-slate-400">
+            Requested {requestedResolution} • serving {resolutionLabel}
           </div>
         </div>
+
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className="h-[430px] w-full overflow-visible rounded-[18px]"
+          preserveAspectRatio="none"
+        >
+          <defs>
+            <linearGradient id="truthBgSwapSparse" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="rgba(17,27,56,0.10)" />
+              <stop offset="100%" stopColor="rgba(8,15,32,0.38)" />
+            </linearGradient>
+          </defs>
+
+          <rect x={0} y={0} width={width} height={height} rx={18} fill="url(#truthBgSwapSparse)" />
+
+          {Array.from({ length: 5 }).map((_, idx) => {
+            const y = padTop + (innerHeight / 4) * idx;
+            return (
+              <line
+                key={`sparse-h-${idx}`}
+                x1={padLeft}
+                y1={y}
+                x2={width - padRight}
+                y2={y}
+                stroke="rgba(255,255,255,0.06)"
+                strokeWidth="1"
+              />
+            );
+          })}
+
+          {Array.from({ length: 5 }).map((_, idx) => {
+            const x = padLeft + (innerWidth / 4) * idx;
+            return (
+              <line
+                key={`sparse-v-${idx}`}
+                x1={x}
+                y1={padTop}
+                x2={x}
+                y2={padTop + innerHeight}
+                stroke="rgba(255,255,255,0.05)"
+                strokeWidth="1"
+              />
+            );
+          })}
+
+          {fallbackPrice !== null ? (
+            <>
+              <line
+                x1={padLeft}
+                y1={priceY}
+                x2={width - padRight}
+                y2={priceY}
+                stroke="rgba(87,229,223,0.9)"
+                strokeDasharray="4 4"
+                strokeWidth="1"
+              />
+              <rect
+                x={width - padRight + 2}
+                y={priceY - 14}
+                width={72}
+                height={28}
+                rx={8}
+                fill="#57E5DF"
+              />
+              <text
+                x={width - padRight + 38}
+                y={priceY + 5}
+                textAnchor="middle"
+                fill="#081229"
+                fontSize="14"
+                fontWeight="700"
+              >
+                {formatNum(fallbackPrice, 6)}
+              </text>
+            </>
+          ) : null}
+
+          <text
+            x={width / 2}
+            y={height / 2 - 8}
+            textAnchor="middle"
+            fill="rgba(255,255,255,0.95)"
+            fontSize="30"
+            fontWeight="700"
+          >
+            {pairLabel}
+          </text>
+
+          <text
+            x={width / 2}
+            y={height / 2 + 24}
+            textAnchor="middle"
+            fill="rgba(203,213,225,0.80)"
+            fontSize="14"
+          >
+            Truth layer remains live while long-range candles are sparse.
+          </text>
+
+          <text
+            x={width / 2}
+            y={height - 14}
+            textAnchor="middle"
+            fill="rgba(226,232,240,0.75)"
+            fontSize="13"
+          >
+            {pairLabel}
+          </text>
+        </svg>
       </div>
     );
   }
@@ -525,13 +924,13 @@ function TruthChart({
         preserveAspectRatio="none"
       >
         <defs>
-          <linearGradient id="truthBg" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id="truthBgSwap" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="rgba(17,27,56,0.10)" />
             <stop offset="100%" stopColor="rgba(8,15,32,0.38)" />
           </linearGradient>
         </defs>
 
-        <rect x={0} y={0} width={width} height={height} rx={18} fill="url(#truthBg)" />
+        <rect x={0} y={0} width={width} height={height} rx={18} fill="url(#truthBgSwap)" />
 
         {priceTicks.map((tick, idx) => (
           <g key={`grid-${idx}`}>
@@ -689,8 +1088,8 @@ function TruthChart({
 export default function RioDexSwapPage() {
   const searchParams = useSearchParams();
 
-  const initialFrom = assetLabel(searchParams.get("from"));
-  const initialTo = assetLabel(searchParams.get("to"));
+  const initialFrom = getAssetSymbol(searchParams.get("from"));
+  const initialTo = getAssetSymbol(searchParams.get("to"));
   const initialPool = searchParams.get("pool") || "";
 
   const [fromToken, setFromToken] = useState(
@@ -709,13 +1108,19 @@ export default function RioDexSwapPage() {
   const [balanceError, setBalanceError] = useState<string | null>(null);
 
   const [pair, setPair] = useState<PairMeta | null>(null);
+  const [registryMap, setRegistryMap] = useState(() => buildTokenRegistryMap([]));
+  const [registryLoading, setRegistryLoading] = useState(false);
   const [liquidityHistory, setLiquidityHistory] = useState<LiquiditySnapshot[]>([]);
   const [recentSwaps, setRecentSwaps] = useState<SwapRow[]>([]);
-  const [tvSeries, setTvSeries] = useState<TvSeries | null>(null);
+  const [candlePayload, setCandlePayload] = useState<CandleResponse | null>(null);
   const [marketResolution, setMarketResolution] = useState<string>("1m");
   const [marketLoading, setMarketLoading] = useState(true);
   const [marketError, setMarketError] = useState<string | null>(null);
   const [marketRefreshNonce, setMarketRefreshNonce] = useState(0);
+  const [registryPair, setRegistryPair] = useState<RegistryPairContext | null>(null);
+  const [registryMarkets, setRegistryMarkets] = useState<RegistryMarketLite[]>([]);
+  const [registryTruthLoading, setRegistryTruthLoading] = useState(false);
+  const [registryTruthError, setRegistryTruthError] = useState<string | null>(null);
 
   const [quoteOut, setQuoteOut] = useState<string>("0");
   const [quoteFee, setQuoteFee] = useState<string>("0");
@@ -723,59 +1128,57 @@ export default function RioDexSwapPage() {
   const [quoteError, setQuoteError] = useState<string | null>(null);
 
   const [executing, setExecuting] = useState(false);
-  
-
   const [executionStage, setExecutionStage] = useState<string | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<SettlementReceipt | null>(null);
   const [flashNotice, setFlashNotice] = useState<string | null>(null);
 
-
   const pairAddress = initialPool || CANONICAL_PAIR_ADDR;
+  const pairRoutes = useMemo(() => buildRioDexSurfaceHref(pairAddress), [pairAddress]);
 
   const syncWalletFromStorage = useCallback(() => {
     setConnectedAddress(readStoredWalletAddress());
   }, []);
 
-  const loadMarket = useCallback(async () => {
-    setMarketLoading(true);
-    setMarketError(null);
+const loadMarket = useCallback(async () => {
+  setMarketLoading(true);
+  setMarketError(null);
 
-    try {
-      const [pairsRes, liquidityRes, swapsRes, candlesRes] = await Promise.all([
-        fetchJson<{ ok?: boolean; pairs?: PairMeta[] }>("/api/v1/riodex/pairs"),
-        fetchJson<{ ok?: boolean; liquidity?: LiquiditySnapshot[] }>(
-          `/api/v1/riodex/pairs/${encodeURIComponent(pairAddress)}/liquidity?limit=24`
-        ),
-        fetchJson<{ ok?: boolean; swaps?: SwapRow[] }>(
-          `/api/v1/riodex/pairs/${encodeURIComponent(pairAddress)}/swaps?limit=8`
-        ),
-        fetchJson<CandleResponse>(
-          `/api/v1/riodex/pairs/${encodeURIComponent(
-            pairAddress
-          )}/candles?resolution=${encodeURIComponent(selectedResolution)}&limit=64`
-        ),
-      ]);
+  try {
+    const [pairsRes, liquidityRes, swapsRes, candlesRes] = await Promise.all([
+      fetchJson<{ ok?: boolean; pairs?: PairMeta[] }>("/api/v1/riodex/pairs"),
+      fetchJson<{ ok?: boolean; liquidity?: LiquiditySnapshot[] }>(
+        `/api/v1/riodex/pairs/${encodeURIComponent(pairAddress)}/liquidity?limit=24`
+      ),
+      fetchJson<{ ok?: boolean; swaps?: SwapRow[] }>(
+        `/api/v1/riodex/pairs/${encodeURIComponent(pairAddress)}/swaps?limit=50`
+      ),
+      fetchJson<CandleResponse>(
+        `/api/v1/riodex/pairs/${encodeURIComponent(
+          pairAddress
+        )}/candles?resolution=${encodeURIComponent(selectedResolution)}&limit=64`
+      ),
+    ]);
 
-      const matchedPair =
-        pairsRes?.pairs?.find((p) => p.pair_address === pairAddress) || null;
+    const matchedPair =
+      pairsRes?.pairs?.find((p) => p.pair_address === pairAddress) || null;
 
-      setPair(matchedPair);
-      setLiquidityHistory(liquidityRes?.liquidity || []);
-      setRecentSwaps(swapsRes?.swaps || []);
-      setTvSeries(candlesRes?.tv || null);
-      setMarketResolution(candlesRes?.resolution || "1m");
-    } catch (e: any) {
-      setMarketError(e?.message || "Failed to load RioDex market state");
-      setPair(null);
-      setLiquidityHistory([]);
-      setRecentSwaps([]);
-      setTvSeries(null);
-      setMarketResolution("1m");
-    } finally {
-      setMarketLoading(false);
-    }
-  }, [pairAddress, selectedResolution]);
+    setPair(matchedPair);
+    setLiquidityHistory(liquidityRes?.liquidity || []);
+    setRecentSwaps(swapsRes?.swaps || []);
+    setCandlePayload(candlesRes || null);
+    setMarketResolution(candlesRes?.resolution || selectedResolution);
+  } catch (e: any) {
+    setMarketError(e?.message || "Failed to load RioDex market state");
+    setPair(null);
+    setLiquidityHistory([]);
+    setRecentSwaps([]);
+    setCandlePayload(null);
+    setMarketResolution(selectedResolution);
+  } finally {
+    setMarketLoading(false);
+  }
+}, [pairAddress, selectedResolution]);
 
   const loadBalances = useCallback(
     async (addressOverride?: string): Promise<WalletBalanceSnapshot | null> => {
@@ -874,11 +1277,74 @@ export default function RioDexSwapPage() {
     loadMarket();
   }, [loadMarket, marketRefreshNonce]);
 
-useEffect(() => {
-  if (!flashNotice) return;
-  const timer = window.setTimeout(() => setFlashNotice(null), 4500);
-  return () => window.clearTimeout(timer);
-}, [flashNotice]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRegistryTruth() {
+      try {
+        setRegistryTruthLoading(true);
+        setRegistryTruthError(null);
+
+        const [board, pairTruth] = await Promise.all([
+          fetchJson<RegistryBoardResponse>("/api/rioex/markets?canonicalOnly=true&sort=liquidity"),
+          fetchJson<RegistryPairResponse>(`/api/rioex/markets/${encodeURIComponent(pairAddress)}`),
+        ]);
+
+        if (!active) return;
+        setRegistryMarkets(board?.markets || []);
+        setRegistryPair(pairTruth?.pair || pairTruth?.item || null);
+      } catch (error: any) {
+        if (!active) return;
+        setRegistryPair(null);
+        setRegistryMarkets([]);
+        setRegistryTruthError(error?.message || "Failed to load authoritative registry truth.");
+      } finally {
+        if (active) setRegistryTruthLoading(false);
+      }
+    }
+
+    loadRegistryTruth();
+    return () => {
+      active = false;
+    };
+  }, [pairAddress]);
+  useEffect(() => {
+    if (!flashNotice) return;
+    const timer = window.setTimeout(() => setFlashNotice(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [flashNotice]);
+
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRegistry() {
+      const assetIds = [pair?.asset_0_id, pair?.asset_1_id].filter(Boolean) as string[];
+
+      if (!assetIds.length) {
+        if (active) setRegistryMap(buildTokenRegistryMap([]));
+        return;
+      }
+
+      try {
+        setRegistryLoading(true);
+        const items = await getRioDexTokenRegistryBatch(assetIds);
+        if (!active) return;
+        setRegistryMap(buildTokenRegistryMap(items));
+      } catch {
+        if (!active) return;
+        setRegistryMap(buildTokenRegistryMap([]));
+      } finally {
+        if (active) setRegistryLoading(false);
+      }
+    }
+
+    loadRegistry();
+    return () => {
+      active = false;
+    };
+  }, [pair?.asset_0_id, pair?.asset_1_id]);
 
   useEffect(() => {
     let active = true;
@@ -893,7 +1359,22 @@ useEffect(() => {
         return;
       }
 
+      const executionSupported =
+        [pair?.asset_0_id ?? RIO_DENOM, pair?.asset_1_id ?? RUSD_CONTRACT]
+          .sort()
+          .join("|") === [RIO_DENOM, RUSD_CONTRACT].sort().join("|");
+
       try {
+        if (!executionSupported) {
+          if (active) {
+            setQuoteLoading(false);
+            setQuoteOut("0");
+            setQuoteFee("0");
+            setQuoteError(null);
+          }
+          return;
+        }
+
         if (active) {
           setQuoteLoading(true);
           setQuoteError(null);
@@ -944,7 +1425,7 @@ useEffect(() => {
     return () => {
       active = false;
     };
-  }, [fromToken, toToken, amount]);
+  }, [fromToken, toToken, amount, pair?.asset_0_id, pair?.asset_1_id]);
 
   useEffect(() => {
     if (!connectedAddress) {
@@ -956,11 +1437,17 @@ useEffect(() => {
     loadBalances(connectedAddress);
   }, [connectedAddress, loadBalances]);
 
-  const asset0Label = pair?.asset_0_id ? assetLabel(pair.asset_0_id) : "RIO";
-  const asset1Label = pair?.asset_1_id ? assetLabel(pair.asset_1_id) : "RUSD";
-
-  const asset0Id = pair?.asset_0_id ?? "urio";
+  const asset0Id = pair?.asset_0_id ?? RIO_DENOM;
   const asset1Id = pair?.asset_1_id ?? RUSD_CONTRACT;
+
+  const registryPairLabel =
+    registryMap.has(String(asset0Id)) && registryMap.has(String(asset1Id))
+      ? getRegistryPairLabel(registryMap, asset0Id, asset1Id)
+      : buildTruthPairLabel(asset0Id, asset1Id);
+
+  const [asset0Label, asset1Label] = registryPairLabel.includes("/")
+    ? (registryPairLabel.split("/").map((value) => value.trim()) as [string, string])
+    : [getAssetSymbol(asset0Id), getAssetSymbol(asset1Id)];
 
   const fromAssetId = fromToken === asset0Label ? asset0Id : asset1Id;
   const toAssetId = toToken === asset0Label ? asset0Id : asset1Id;
@@ -981,19 +1468,16 @@ useEffect(() => {
     const raw = Number(latestSwap.effective_price);
     if (!Number.isFinite(raw) || raw <= 0) return null;
 
-    const offerLabel = assetLabel(latestSwap.offer_asset_id);
-    const askLabel = assetLabel(latestSwap.ask_asset_id);
-
-    if (offerLabel === asset0Label && askLabel === asset1Label) {
+    if (latestSwap.offer_asset_id === asset0Id && latestSwap.ask_asset_id === asset1Id) {
       return raw;
     }
 
-    if (offerLabel === asset1Label && askLabel === asset0Label) {
+    if (latestSwap.offer_asset_id === asset1Id && latestSwap.ask_asset_id === asset0Id) {
       return raw > 0 ? 1 / raw : null;
     }
 
     return null;
-  }, [latestSwap, asset0Label, asset1Label]);
+  }, [latestSwap, asset0Id, asset1Id]);
 
   const marketPriceTruth = reservePriceTruth ?? normalizedLastTradeTruth;
   const lastTradeDisplayTruth = normalizedLastTradeTruth;
@@ -1005,56 +1489,52 @@ useEffect(() => {
       )} ${asset1Label}`
     : null;
 
-  const updatedTruthTime = latestSwap?.block_time || latestLiquidity?.block_time || null;
-  const swapCountTruth = recentSwaps.length;
+  const updatedTruthTime =
+  latestSwap?.block_time || latestLiquidity?.block_time || null;
 
-  const marketBase = getTokenMeta(pair?.asset_0_id ?? "urio").symbol;
-  const marketQuote = getTokenMeta(pair?.asset_1_id ?? RUSD_CONTRACT).symbol;
-  const marketLabel = `${marketBase} / ${marketQuote}`;
-  const marketIdentity = "On-chain pair";
+  const authoritativeLiquidityUsd =
+    registryPair?.liquidityUsd ?? estimateLiquidityValue(pair, latestLiquidity);
+  const authoritativeFeeBps = registryPair?.feeBps ?? pair?.fee_bps ?? null;
+  const authoritativeFeePolicy = registryPair?.feePolicy || null;
+  const authoritativeFeeRecipient = registryPair?.feeRecipientAddress || null;
+  const authoritativeLiquiditySource = registryPair?.liquiditySource || null;
+  const authoritativeUpdatedAt =
+    registryPair?.liquidityUpdatedAt || registryPair?.lastSwapTime || updatedTruthTime;
+
+const swapCountTruth = recentSwaps.length;
+
+const marketLabel = registryPairLabel;
+
+  const marketIdentity = pair?.is_canonical
+    ? "Canonical Spherio execution pair"
+    : pair?.is_live
+    ? "On-chain live pair"
+    : "On-chain pair";
+
   const marketHandle = pair?.pair_key || shortAddr(pairAddress, 14, 10);
 
   const numericAmount = Number(amount || 0);
   const slippagePct = Number(slippage || 0);
 
   const chartData = useMemo<ChartPoint[]>(() => {
-  const t = tvSeries?.t || [];
-  const o = tvSeries?.o || [];
-  const h = tvSeries?.h || [];
-  const l = tvSeries?.l || [];
-  const c = tvSeries?.c || [];
-  const v = tvSeries?.v || [];
+    const bucketPoints = sanitizeChartPoints(parseCandleBuckets(candlePayload?.candles));
+    const tvPoints = sanitizeChartPoints(parseTvSeries(candlePayload?.tv));
+    const best = chartQuality(bucketPoints) >= chartQuality(tvPoints) ? bucketPoints : tvPoints;
 
-  const size = Math.min(t.length, o.length, h.length, l.length, c.length);
+    if (!best.length) return [];
 
-  const mapped = Array.from({ length: size }).map((_, idx) => ({
-    time: Number(t[idx]),
-    open: Number(o[idx] ?? 0),
-    high: Number(h[idx] ?? 0),
-    low: Number(l[idx] ?? 0),
-    close: Number(c[idx] ?? 0),
-    volume: Number(v[idx] ?? 0),
-  })).filter((p) =>
-    p.time > 0 &&
-    p.open > 0 &&
-    p.high > 0 &&
-    p.low > 0 &&
-    p.close > 0
-  );
+    const highs = best.map((p) => p.high);
+    const lows = best.map((p) => p.low);
+    const max = Math.max(...highs);
+    const min = Math.min(...lows);
+    const ratio = min > 0 ? max / min : 9999;
 
-  const closes = mapped.map((p) => p.close).sort((a, b) => a - b);
-  const median = closes.length ? closes[Math.floor(closes.length / 2)] : 0;
+    if (best.length < 4 || ratio > 6) {
+      return [];
+    }
 
-  return mapped.filter((p) => {
-    const pointMax = Math.max(p.open, p.high, p.low, p.close);
-    const pointMin = Math.min(p.open, p.high, p.low, p.close);
-
-    if (pointMin <= 0) return false;
-    if (median > 0 && (pointMax > median * 5 || pointMin < median / 5)) return false;
-
-    return pointMax / pointMin < 20;
-  });
-}, [tvSeries]);
+    return best;
+  }, [candlePayload]);
 
   const latestChart = chartData[chartData.length - 1];
   const previousChart = chartData[chartData.length - 2];
@@ -1066,19 +1546,18 @@ useEffect(() => {
       : 0;
 
   const pairExecutionSupported = useMemo(() => {
-    const combo = [asset0Label, asset1Label].sort().join("|");
-    return combo === ["RIO", "RUSD"].sort().join("|");
-  }, [asset0Label, asset1Label]);
+    const combo = [asset0Id, asset1Id].sort().join("|");
+    return combo === [RIO_DENOM, RUSD_CONTRACT].sort().join("|");
+  }, [asset0Id, asset1Id]);
 
-  const fromBalance = fromToken === "RIO" ? rioBalance : rusdBalance;
-  const hasBalances = rioBalance !== null && rusdBalance !== null;
+  const fromBalance = fromAssetId === RIO_DENOM ? rioBalance : fromAssetId === RUSD_CONTRACT ? rusdBalance : null;
 
   const insufficientBalance =
     fromBalance !== null && numericAmount > 0 ? numericAmount > fromBalance : false;
 
   const needsRioFeeBalance =
     !!connectedAddress &&
-    fromToken === "RUSD" &&
+    fromAssetId !== RIO_DENOM &&
     rioBalance !== null &&
     rioBalance <= 0;
 
@@ -1145,14 +1624,12 @@ useEffect(() => {
   const canSwap =
     !!connectedAddress &&
     pairExecutionSupported &&
-    hasBalances &&
     numericAmount > 0 &&
     fromToken !== toToken &&
     !insufficientBalance &&
     !needsRioFeeBalance &&
-    !balanceLoading &&
     !quoteLoading &&
-    !balanceError &&
+    !marketLoading &&
     !marketError &&
     !!latestLiquidity &&
     displayQuote !== null &&
@@ -1162,17 +1639,11 @@ useEffect(() => {
     !connectedAddress
       ? "Connect wallet from the global header."
       : !pairExecutionSupported
-      ? "This terminal can display any indexed pair, but live execution is currently wired for RIO/RUSD only."
+      ? "Execution is currently wired for RIO/RUSD only."
       : marketLoading
       ? "Loading market state."
       : marketError
       ? "Market state unavailable."
-      : balanceLoading
-      ? "Refreshing balances."
-      : balanceError
-      ? "Balance sync failed."
-      : !hasBalances
-      ? "Wallet balances required."
       : !latestLiquidity
       ? "Liquidity unavailable."
       : !amount || numericAmount <= 0
@@ -1185,12 +1656,21 @@ useEffect(() => {
       ? "RIO needed for network fees."
       : insufficientBalance
       ? `Insufficient ${fromToken}.`
-      : quoteError && displayQuote !== null
-      ? "Reserve truth fallback quote active."
-      : "Ready";
+      : "Ready.";
+
+  useEffect(() => {
+    if (!pair) return;
+    const allowed = [asset0Label, asset1Label];
+    if (!allowed.includes(fromToken) || !allowed.includes(toToken) || fromToken === toToken) {
+      setFromToken(asset0Label);
+      setToToken(asset1Label);
+    }
+  }, [pair, asset0Label, asset1Label]);
 
   const hardError =
-    executionError || balanceError || marketError || (!displayQuote ? quoteError : null);
+    executionError ||
+    marketError ||
+    (!displayQuote && quoteError ? quoteError : null);
 
   function flipPair() {
     setFromToken(toToken);
@@ -1209,7 +1689,7 @@ useEffect(() => {
     if (mode === "half") {
       next = fromBalance / 2;
     } else {
-      next = fromToken === "RIO" ? Math.max(fromBalance - 0.02, 0) : fromBalance;
+      next = fromAssetId === RIO_DENOM ? Math.max(fromBalance - 0.02, 0) : fromBalance;
     }
 
     setAmount(next > 0 ? trimFixed(next, 6) : "");
@@ -1226,8 +1706,12 @@ useEffect(() => {
     setExecutionError(null);
     setExecutionStage("Preparing");
 
+    let rpcEndpoint: string | null = null;
+
     try {
-      const { signer, address: sender } = await getKeplrSigner();
+      const ctx = await getBrowserSigningContext();
+      const { client, address: sender } = ctx;
+      rpcEndpoint = ctx.rpcEndpoint;
 
       if (sender !== connectedAddress) {
         writeStoredWalletAddress(sender);
@@ -1235,14 +1719,13 @@ useEffect(() => {
       }
 
       setExecutionStage("Wallet");
-      const client = await getSigningClient(signer);
 
       const amountBase = toBaseUnits(amount, 6);
       const maxSpread = maxSpreadFromSlippage(slippagePct);
 
       let res: any;
 
-      if (fromToken === "RIO") {
+      if (fromAssetId === RIO_DENOM && toAssetId === RUSD_CONTRACT) {
         const msg = {
           swap: {
             offer_asset: {
@@ -1266,7 +1749,7 @@ useEffect(() => {
           "RioDex Swap RIO→RUSD",
           [{ denom: RIO_DENOM, amount: amountBase }]
         );
-      } else {
+      } else if (fromAssetId === RUSD_CONTRACT && toAssetId === RIO_DENOM) {
         const hookMsg = encodeHookMsg({
           swap: {
             ask_asset_info: {
@@ -1293,6 +1776,8 @@ useEffect(() => {
           "auto",
           "RioDex Swap RUSD→RIO"
         );
+      } else {
+        throw new Error("Execution is currently enabled for canonical RIO/RUSD routing only.");
       }
 
       setExecutionStage("Confirming");
@@ -1308,21 +1793,25 @@ useEffect(() => {
       const afterRusd = refreshed?.rusd ?? null;
 
       const actualInputDelta =
-        fromToken === "RIO"
+        fromAssetId === RIO_DENOM
           ? beforeRio !== null && afterRio !== null
             ? beforeRio - afterRio
             : null
-          : beforeRusd !== null && afterRusd !== null
-          ? beforeRusd - afterRusd
+          : fromAssetId === RUSD_CONTRACT
+          ? beforeRusd !== null && afterRusd !== null
+            ? beforeRusd - afterRusd
+            : null
           : null;
 
       const actualOutputDelta =
-        toToken === "RUSD"
+        toAssetId === RUSD_CONTRACT
           ? beforeRusd !== null && afterRusd !== null
             ? afterRusd - beforeRusd
             : null
-          : beforeRio !== null && afterRio !== null
-          ? afterRio - beforeRio
+          : toAssetId === RIO_DENOM
+          ? beforeRio !== null && afterRio !== null
+            ? afterRio - beforeRio
+            : null
           : null;
 
       setReceipt({
@@ -1344,13 +1833,15 @@ useEffect(() => {
         afterRusd,
         height: res?.height ?? null,
         gasUsed: res?.gasUsed ?? null,
+        rpcEndpoint,
       });
-  setFlashNotice(`+${formatNum(actualOutputDelta ?? displayQuote, 6)} ${toToken} received`);
 
-     setAmount("");
+      setFlashNotice(`+${formatNum(actualOutputDelta ?? displayQuote, 6)} ${toToken} received`);
+
+      setAmount("");
       setExecutionStage(null);
     } catch (e: any) {
-      const errorMessage = normalizeExecutionError(e);
+      const errorMessage = normalizeExecutionError(e, rpcEndpoint);
       setExecutionError(errorMessage);
       setReceipt({
         status: "error",
@@ -1367,6 +1858,7 @@ useEffect(() => {
         afterRio: rioBalance,
         afterRusd: rusdBalance,
         error: errorMessage,
+        rpcEndpoint,
       });
       setExecutionStage(null);
     } finally {
@@ -1374,36 +1866,31 @@ useEffect(() => {
     }
   }
 
-   function primaryButtonLabel() {
+  function primaryButtonLabel() {
     if (executing && executionStage) return executionStage.toUpperCase();
     return connectedAddress ? "SWAP" : "CONNECT WALLET";
   }
 
-function walletStatusText() {
-  if (executionStage === "Wallet") return "Awaiting wallet approval";
-  if (executionStage === "Broadcasting") return "Broadcasting to chain";
-  if (executionStage === "Confirming") return "Awaiting confirmation";
-  return null;
-}
+  function walletStatusText() {
+    if (executionStage === "Wallet") return "Awaiting wallet approval";
+    if (executionStage === "Broadcasting") return "Broadcasting to chain";
+    if (executionStage === "Confirming") return "Awaiting confirmation";
+    return null;
+  }
 
   return (
     <div className="min-h-[calc(100vh-64px)] bg-[radial-gradient(circle_at_16%_10%,rgba(60,198,255,0.10),transparent_18%),radial-gradient(circle_at_84%_16%,rgba(74,144,255,0.10),transparent_20%),linear-gradient(90deg,#010816_0%,#04132f_34%,#04163c_62%,#020816_100%)] text-white">
       <div className="mx-auto max-w-[1560px] px-4 py-5 xl:px-6">
         <div className={`${shell("nav")} flex flex-wrap items-center gap-3 px-4 py-3`}>
           <div className="mr-1 flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-400/25 bg-[#13214c]">
-           <img
-          src={RIO_LOGO}
-            alt="RIO"
-          className="h-7 w-7 rounded-full object-cover"
-           />
-         </div>
+            <TokenAvatar registryMap={registryMap} assetId={asset0Id} label={asset0Label} size={28} />
+          </div>
 
-
-          <NavLink href="/riodex/swap" label="Swap" active />
-          <NavLink href="/riodex/liquidity" label="Liquidity" />
-          <NavLink href="/riodex/markets" label="Markets" />
-          <NavLink href={`/riodex/pool/${pairAddress}`} label="Pool" />
-          <NavLink href="/riodex" label="RioDex" />
+          <NavLink href={RIODEX_SWAP_ROUTE} label="Swap" active />
+          <NavLink href={RIODEX_LIQUIDITY_ROUTE} label="Liquidity" />
+          <NavLink href={RIODEX_SCREENER_ROUTE} label="Screener" />
+          <NavLink href={pairRoutes.pool} label="Pool" />
+          <NavLink href={RIODEX_HOME_ROUTE} label="RioDex" />
           <NavLink href="/rioex" label="RioEx" />
           <NavLink href="/rioexplorer" label="RioExplorer" />
 
@@ -1417,14 +1904,97 @@ function walletStatusText() {
           </div>
         </div>
 
+        <div className="mt-4">
+          <ExchangeSurfaceNav
+            product="riodex"
+            activeKey="swap"
+            featured={registryPair ? {
+              displaySymbol: registryPair.displaySymbol,
+              liquidityUsd: registryPair.liquidityUsd,
+              feeBps: registryPair.feeBps,
+              isCanonical: registryPair.isCanonical,
+              isLive: registryPair.isLive,
+              routes: registryPair.routes,
+            } : (registryMarkets[0] || null)}
+            title="RioDex Execution Surfaces"
+            subtitle="Shared horizontal routing now sits above Swap so execution, markets, assets, LaunchPad, RIO, RUSD, and account handoff stay consistent while the larger existing swap surface remains intact."
+          />
+        </div>
+
+        {(registryPair || registryMarkets.length > 0 || registryTruthError) ? (
+          <div className="mt-4 rounded-[24px] border border-cyan-400/14 bg-[linear-gradient(180deg,rgba(11,26,63,0.92),rgba(5,16,40,0.96))] px-5 py-4">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.18em] text-cyan-300/85">
+                  Authoritative Pair Truth
+                </div>
+                <div className="mt-2 text-2xl font-semibold text-white">
+                  {registryPair?.displaySymbol || marketLabel}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-300">
+                  <span className={truthBadge(registryPair?.isLive ? "live" : "neutral")}>
+                    {registryPair?.isCanonical ? "Canonical" : "Registry-backed"}
+                  </span>
+                  {authoritativeLiquiditySource ? (
+                    <span className={truthBadge("neutral")}>{authoritativeLiquiditySource}</span>
+                  ) : null}
+                  {authoritativeFeePolicy ? (
+                    <span className={truthBadge("neutral")}>{authoritativeFeePolicy}</span>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <SimpleStat
+                  label="Registry Liquidity"
+                  value={authoritativeLiquidityUsd !== null ? formatUsd(authoritativeLiquidityUsd) : "—"}
+                />
+                <SimpleStat
+                  label="Fee Policy"
+                  value={authoritativeFeeBps !== null ? `${authoritativeFeeBps} bps` : "—"}
+                />
+                <SimpleStat
+                  label="Updated"
+                  value={formatDateTime(authoritativeUpdatedAt)}
+                />
+                <SimpleStat
+                  label="Treasury"
+                  value={authoritativeFeeRecipient ? shortAddr(authoritativeFeeRecipient, 10, 8) : "—"}
+                />
+              </div>
+            </div>
+
+            {registryMarkets.length ? (
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                {registryMarkets.slice(0, 3).map((item) => (
+                  <Link
+                    key={item.pairAddress}
+                    href={item.routes.swap}
+                    className="rounded-[18px] border border-white/10 bg-white/[0.04] px-4 py-3"
+                  >
+                    <div className="text-sm font-semibold text-white">{item.displaySymbol}</div>
+                    <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-white/45">
+                      {item.canonicalSymbol}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+
+            {registryTruthError ? (
+              <div className="mt-3 text-xs text-amber-200">{registryTruthError}</div>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="mt-5 grid items-start gap-5 xl:grid-cols-[minmax(0,1.42fr)_380px] 2xl:grid-cols-[minmax(0,1.48fr)_410px]">
           <section className={`${shell("panel")} p-5 xl:p-6`}>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex items-center gap-2">
-                    <TokenAvatar assetId={pair?.asset_0_id ?? "urio"} size={40} />
-                    <TokenAvatar assetId={pair?.asset_1_id ?? RUSD_CONTRACT} size={40} />
+                    <TokenAvatar registryMap={registryMap} assetId={asset0Id} label={asset0Label} size={40} />
+                    <TokenAvatar registryMap={registryMap} assetId={asset1Id} label={asset1Label} size={40} />
                   </div>
 
                   <div className="min-w-0">
@@ -1432,15 +2002,16 @@ function walletStatusText() {
                       <div className="min-w-0 text-[32px] font-semibold leading-none tracking-tight text-white">
                         {marketLabel}
                       </div>
-
-                      
+                      {registryPair?.isCanonical || pair?.is_canonical ? (
+                        <span className={truthBadge("live")}>Canonical</span>
+                      ) : null}
                     </div>
 
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-300">
                       <span>{marketIdentity}</span>
-                      {pair?.fee_bps !== null && pair?.fee_bps !== undefined ? (
+                      {authoritativeFeeBps !== null && authoritativeFeeBps !== undefined ? (
                         <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-slate-300">
-                          {pair.fee_bps} bps
+                          {authoritativeFeeBps} bps
                         </span>
                       ) : null}
                       <span className="max-w-[26rem] truncate text-slate-400">
@@ -1486,9 +2057,6 @@ function walletStatusText() {
                   </span>
                 </div>
               </div>
-
-              
-              
             </div>
 
             <div className="mt-5 grid gap-3 grid-cols-2 xl:grid-cols-4">
@@ -1511,37 +2079,32 @@ function walletStatusText() {
                 resolutionLabel={marketResolution || "1m"}
                 requestedResolution={selectedResolution}
                 fallbackPrice={marketPriceTruth}
-                fallbackLiquidity={liquidityTruth}
-                fallbackUpdatedAt={updatedTruthTime}
-                swapCount={swapCountTruth}
               />
             </div>
 
             <div className="mt-3 flex items-center justify-between rounded-[18px] border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-slate-300">
-            <div className="flex items-center gap-3">
-          <Clock3 className="h-4 w-4" />
-            <span>{new Date().toLocaleTimeString()}</span>
-          <span>(local)</span>
-             </div>
-
-          <div className="flex items-center gap-3 text-sm">
-              <span>%</span>
-             <span className="font-semibold text-lime-300">auto</span>
-             </div>
+              <div className="flex items-center gap-3">
+                <Clock3 className="h-4 w-4" />
+                <span>{new Date().toLocaleTimeString()}</span>
+                <span>(local)</span>
               </div>
 
+              <div className="text-xs text-slate-400">
+                {marketLoading ? "Syncing truth source…" : registryPair ? "Truth source: RioDex + authoritative registry" : "Truth source: RioDex"}
+              </div>
+            </div>
 
             <div className="mt-5 grid gap-3 grid-cols-2 xl:grid-cols-4">
               <SimpleStat label="Pair" value={marketLabel} />
               <SimpleStat
                 label="Fee Tier"
                 value={
-                  pair?.fee_bps !== null && pair?.fee_bps !== undefined
-                    ? `${pair.fee_bps} bps`
+                  authoritativeFeeBps !== null && authoritativeFeeBps !== undefined
+                    ? `${authoritativeFeeBps} bps`
                     : "—"
                 }
               />
-              <SimpleStat label="Recent Swaps" value={String(swapCountTruth)} />
+             <SimpleStat label="Recent Swaps Loaded" value={String(swapCountTruth)} />
               <SimpleStat
                 label="LP Supply"
                 value={latestLiquidity ? formatNum(totalShare, 2) : "—"}
@@ -1567,209 +2130,201 @@ function walletStatusText() {
               </div>
             ) : null}
 
-            {quoteError && displayQuote !== null ? (
+            {walletStatusText() ? (
               <div className="mt-4 rounded-[18px] border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
-                Reserve truth fallback quote active.
+                {walletStatusText()}
               </div>
             ) : null}
 
-            {walletStatusText() ? (
-            <div className="mt-4 rounded-[18px] border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
-            {walletStatusText()}
-            </div> 
+            {flashNotice ? (
+              <div className="mt-4 rounded-[18px] border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
+                {flashNotice}
+              </div>
             ) : null}
 
-            {flashNotice ? (
-            <div className="mt-4 rounded-[18px] border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
-             {flashNotice}
-             </div>
-             ) : null}
-              
-          <div className="mt-5 space-y-4">
-  <div className={`${shell("field")} p-4`}>
-    <div className="flex items-center justify-between gap-3">
-      <div className="text-lg font-semibold text-white">From</div>
-      <div className="flex items-center gap-2">
-        <QuickAmountButton label="Max" onClick={() => setPresetAmount("max")} />
-        <QuickAmountButton label="50%" onClick={() => setPresetAmount("half")} />
-      </div>
-    </div>
+            <div className="mt-5 space-y-4">
+              <div className={`${shell("field")} p-4`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-lg font-semibold text-white">From</div>
+                  <div className="flex items-center gap-2">
+                    <QuickAmountButton label="Max" onClick={() => setPresetAmount("max")} />
+                    <QuickAmountButton label="50%" onClick={() => setPresetAmount("half")} />
+                  </div>
+                </div>
 
-    <div className="mt-4 flex items-center justify-between gap-4">
-      <div className={`${shell("token")} flex min-w-0 items-center gap-3 px-4 py-3`}>
-    <TokenAvatar assetId={fromAssetId} size={34} />
-         <div className="min-w-0 truncate text-2xl font-semibold text-white">
-       {fromToken}
-      </div>
-      <ChevronDown className="h-5 w-5 shrink-0 text-slate-300" />
-       </div>
+                <div className="mt-4 flex items-center justify-between gap-4">
+                  <div className={`${shell("token")} flex min-w-0 items-center gap-3 px-4 py-3`}>
+                    <TokenAvatar registryMap={registryMap} assetId={fromAssetId} label={fromToken} size={34} />
+                    <div className="min-w-0 truncate text-2xl font-semibold text-white">
+                      {fromToken}
+                    </div>
+                    <ChevronDown className="h-5 w-5 shrink-0 text-slate-300" />
+                  </div>
 
+                  <div className="text-sm text-slate-400">
+                    {balanceLoading
+                      ? "Loading..."
+                      : fromBalance !== null
+                      ? formatNum(fromBalance, 4)
+                      : "—"}
+                  </div>
+                </div>
 
-      <div className="text-sm text-slate-400">
-        {balanceLoading
-          ? "Loading..."
-          : fromBalance !== null
-          ? formatNum(fromBalance, 4)
-          : "—"}
-      </div>
-    </div>
+                <input
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.0"
+                  className="mt-6 w-full bg-transparent text-right text-4xl font-semibold text-white outline-none placeholder:text-slate-500"
+                />
+              </div>
 
-    <input
-      value={amount}
-      onChange={(e) => setAmount(e.target.value)}
-      placeholder="0.0"
-      className="mt-6 w-full bg-transparent text-right text-4xl font-semibold text-white outline-none placeholder:text-slate-500"
-    />
-  </div>
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  onClick={flipPair}
+                  className="flex h-14 w-14 items-center justify-center rounded-full bg-[#9dbbff] text-3xl font-semibold text-[#081229] shadow-[0_10px_30px_rgba(157,187,255,0.32)] transition hover:scale-[1.02]"
+                >
+                  ↓
+                </button>
+              </div>
 
-  <div className="flex justify-center">
-    <button
-      type="button"
-      onClick={flipPair}
-      className="flex h-14 w-14 items-center justify-center rounded-full bg-[#9dbbff] text-3xl font-semibold text-[#081229] shadow-[0_10px_30px_rgba(157,187,255,0.32)] transition hover:scale-[1.02]"
-    >
-      ↓
-    </button>
-  </div>
+              <div className={`${shell("field")} p-4`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-lg font-semibold text-white">To</div>
+                  <div className="text-xs text-slate-400">Estimated output</div>
+                </div>
 
-  <div className={`${shell("field")} p-4`}>
-    <div className="flex items-center justify-between gap-3">
-      <div className="text-lg font-semibold text-white">To</div>
-      <div className="text-xs text-slate-400">Estimated output</div>
-          </div>
+                <div className="mt-4 flex items-center justify-between gap-4">
+                  <div className={`${shell("token")} flex min-w-0 items-center gap-3 px-4 py-3`}>
+                    <TokenAvatar registryMap={registryMap} assetId={toAssetId} label={toToken} size={34} />
+                    <div className="min-w-0 truncate text-2xl font-semibold text-white">
+                      {toToken}
+                    </div>
+                    <ChevronDown className="h-5 w-5 shrink-0 text-slate-300" />
+                  </div>
 
-           <div className="mt-4 flex items-center justify-between gap-4">
-         <div className={`${shell("token")} flex min-w-0 items-center gap-3 px-4 py-3`}>
-         <TokenAvatar assetId={toAssetId} size={34} />
-           <div className="min-w-0 truncate text-2xl font-semibold text-white">
-         {toToken}
-         </div>
-           <ChevronDown className="h-5 w-5 shrink-0 text-slate-300" />
+                  <div className="text-sm text-slate-400">
+                    {balanceLoading
+                      ? "Loading..."
+                      : toToken === "RIO"
+                      ? rioBalance !== null
+                        ? formatNum(rioBalance, 4)
+                        : "—"
+                      : rusdBalance !== null
+                      ? formatNum(rusdBalance, 4)
+                      : "—"}
+                  </div>
+                </div>
+
+                <div className="mt-6 text-right text-4xl font-semibold text-white">
+                  {quoteLoading ? "..." : displayQuote !== null ? formatNum(displayQuote, 6) : "0.0"}
+                </div>
+              </div>
+
+              <div className={`${shell("soft")} p-4`}>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-slate-300">Slippage</span>
+                  <span className="text-sm font-medium text-white">{slippage}%</span>
+                </div>
+
+                <div className="mt-3 flex gap-2">
+                  {["0.1", "0.5", "1.0"].map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setSlippage(value)}
+                      className={[
+                        "rounded-xl px-3 py-2 text-xs transition",
+                        slippage === value
+                          ? "bg-cyan-400 text-[#081229] font-semibold"
+                          : "bg-white/8 text-slate-300 hover:bg-white/12",
+                      ].join(" ")}
+                    >
+                      {value}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <SimpleStat
+                  label="Reserve Price"
+                  value={marketPriceTruth !== null ? formatNum(marketPriceTruth, 6) : "—"}
+                />
+                <SimpleStat label="Liquidity" value={liquidityTruth || "—"} />
+                <SimpleStat label="Recent Swaps" value={String(swapCountTruth)} />
+                <SimpleStat label="Updated" value={formatDateTime(updatedTruthTime)} />
+              </div>
+
+              <div className={`${shell("soft")} space-y-2 p-4 text-sm`}>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-400">Rate</span>
+                  <span className="text-white">
+                    {quoteData
+                      ? `${formatNum(quoteData.effectivePrice, 6)} ${toToken}/${fromToken}`
+                      : marketPriceTruth !== null
+                      ? `${formatNum(marketPriceTruth, 6)} ${asset1Label}/${asset0Label}`
+                      : "—"}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-400">Min received</span>
+                  <span className="text-white">
+                    {quoteData
+                      ? `${formatNum(quoteData.minReceived, 6)} ${toToken}`
+                      : displayQuote !== null
+                      ? `${formatNum(displayQuote * (1 - slippagePct / 100), 6)} ${toToken}`
+                      : "—"}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-400">Fee</span>
+                  <span className="text-white">
+                    {quoteData ? `${formatNum(quoteData.feeAmount, 6)} ${fromToken}` : "—"}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleExecuteSwap}
+                disabled={!canSwap || executing}
+                className={[
+                  "w-full rounded-[18px] px-5 py-4 text-base font-semibold uppercase tracking-[0.14em] transition",
+                  canSwap && !executing
+                    ? "bg-cyan-400 text-[#081229] shadow-[0_14px_36px_rgba(34,211,238,0.28)] hover:brightness-105"
+                    : "cursor-not-allowed bg-white/10 text-white/60",
+                ].join(" ")}
+              >
+                {primaryButtonLabel()}
+              </button>
+
+              <div className="text-center text-xs text-slate-400">{swapGateReason}</div>
+
+              {needsRioFeeBalance ? (
+                <div className="text-center text-xs text-amber-300">
+                  RIO is required for network fee settlement.
+                </div>
+              ) : null}
+
+              {receipt?.status === "success" ? (
+                <div className="rounded-[18px] border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
+                  Confirmed • {receipt.txHash ? shortAddr(receipt.txHash, 16, 12) : "settled"}
+                </div>
+              ) : null}
+
+              {receipt?.status === "error" ? (
+                <div className="rounded-[18px] border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                  {receipt.error || "Swap failed"}
+                </div>
+              ) : null}
+            </div>
+          </section>
         </div>
 
-      <div className="text-sm text-slate-400">
-        {balanceLoading
-          ? "Loading..."
-          : toToken === "RIO"
-          ? rioBalance !== null
-            ? formatNum(rioBalance, 4)
-            : "—"
-          : rusdBalance !== null
-          ? formatNum(rusdBalance, 4)
-          : "—"}
-      </div>
-    </div>
-
-    <div className="mt-6 text-right text-4xl font-semibold text-white">
-      {quoteLoading ? "..." : displayQuote !== null ? formatNum(displayQuote, 6) : "0.0"}
-    </div>
-  </div>
-
-  <div className={`${shell("soft")} p-4`}>
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-sm text-slate-300">Slippage</span>
-      <span className="text-sm font-medium text-white">{slippage}%</span>
-    </div>
-
-    <div className="mt-3 flex gap-2">
-      {["0.1", "0.5", "1.0"].map((value) => (
-        <button
-          key={value}
-          type="button"
-          onClick={() => setSlippage(value)}
-          className={[
-            "rounded-xl px-3 py-2 text-xs transition",
-            slippage === value
-              ? "bg-cyan-400 text-[#081229] font-semibold"
-              : "bg-white/8 text-slate-300 hover:bg-white/12",
-          ].join(" ")}
-        >
-          {value}%
-        </button>
-      ))}
-    </div>
-  </div>
-
-  <div className="grid gap-3 sm:grid-cols-2">
-    <SimpleStat
-      label="Reserve Price"
-      value={marketPriceTruth !== null ? formatNum(marketPriceTruth, 6) : "—"}
-    />
-    <SimpleStat label="Liquidity" value={liquidityTruth || "—"} />
-    <SimpleStat label="Recent Swaps" value={String(swapCountTruth)} />
-    <SimpleStat label="Updated" value={formatDateTime(updatedTruthTime)} />
-  </div>
-
-  <div className={`${shell("soft")} space-y-2 p-4 text-sm`}>
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-slate-400">Rate</span>
-      <span className="text-white">
-        {quoteData
-          ? `${formatNum(quoteData.effectivePrice, 6)} ${toToken}/${fromToken}`
-          : marketPriceTruth !== null
-          ? `${formatNum(marketPriceTruth, 6)} ${asset1Label}/${asset0Label}`
-          : "—"}
-      </span>
-    </div>
-
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-slate-400">Min received</span>
-      <span className="text-white">
-        {quoteData
-          ? `${formatNum(quoteData.minReceived, 6)} ${toToken}`
-          : displayQuote !== null
-          ? `${formatNum(displayQuote * (1 - slippagePct / 100), 6)} ${toToken}`
-          : "—"}
-      </span>
-    </div>
-
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-slate-400">Fee</span>
-      <span className="text-white">
-        {quoteData ? `${formatNum(quoteData.feeAmount, 6)} ${fromToken}` : "—"}
-      </span>
-    </div>
-  </div>
-
-  <button
-    onClick={handleExecuteSwap}
-    disabled={!canSwap}
-    className={[
-      "w-full rounded-[18px] px-5 py-4 text-base font-semibold uppercase tracking-[0.14em] transition",
-      canSwap && !executing
-        ? "bg-cyan-400 text-[#081229] shadow-[0_14px_36px_rgba(34,211,238,0.28)] hover:brightness-105"
-        : "cursor-not-allowed bg-white/10 text-white/60",
-    ].join(" ")}
-  >
-    {primaryButtonLabel()}
-  </button>
-
-  <div className="text-center text-xs text-slate-400">{swapGateReason}</div>
-
-  {needsRioFeeBalance ? (
-    <div className="text-center text-xs text-amber-300">
-      RIO is required for network fee settlement.
-    </div>
-  ) : null}
-
-  {receipt?.status === "success" ? (
-    <div className="rounded-[18px] border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
-      Confirmed • {receipt.txHash ? shortAddr(receipt.txHash, 16, 12) : "settled"}
-    </div>
-  ) : null}
-
-  {receipt?.status === "error" ? (
-    <div className="rounded-[18px] border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-      {receipt.error || "Swap failed"}
-    </div>
-  ) : null}
-</div>              
-
-          </section>       
-          </div>
-
         <div className="mt-5 px-1 text-[11px] leading-5 text-slate-500">
-          This terminal reads pair truth, liquidity truth, recent swap truth, and candle truth from the same authoritative RioDex source. Treasury fee collection remains aligned to the chain-wide multisig collector: {shortAddr(TREASURY_FEE_COLLECTOR, 12, 10)}.
+          This terminal reads canonical pair truth from the authoritative RioEx market contract and keeps liquidity, recent swaps, and candle feeds wired for execution support. Treasury fee collection remains aligned to the chain-wide multisig collector: {shortAddr(TREASURY_FEE_COLLECTOR, 12, 10)}.
         </div>
       </div>
     </div>
