@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { RIODEX_HOME_ROUTE } from "@/lib/riodex/routes";
 
 type NavItem = {
   href: string;
@@ -31,8 +32,8 @@ const NAV: NavGroup[] = [
   {
     title: "Terminals",
     items: [
-      { href: "/rio", label: "RIO" },   // ✅ renamed
-      { href: "/rusd", label: "RUSD" }, // ✅ renamed
+      { href: "/rio", label: "RIO" },
+      { href: "/rusd", label: "RUSD" },
     ],
   },
   {
@@ -42,11 +43,9 @@ const NAV: NavGroup[] = [
   {
     title: "Utilities",
     items: [
-      // ✅ NEW — live utilities
       { href: "/rioexplorer", label: "RioExplorer" },
-      { href: "/riodex", label: "RioDex" },
+      { href: RIODEX_HOME_ROUTE, label: "RioDex" },
 
-      // planned stack
       { href: "/rioex", label: "RioEx", disabled: true, badge: "Planned" },
       { href: "/riotelecoms", label: "RioTelecoms", disabled: true, badge: "Planned" },
       { href: "/rioedge", label: "RioEdge / CDN", disabled: true, badge: "Planned" },

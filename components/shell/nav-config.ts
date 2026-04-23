@@ -1,8 +1,21 @@
+import {
+  RIODEX_HOME_ROUTE,
+  RIODEX_SCREENER_ROUTE,
+  RIODEX_SWAP_ROUTE,
+  RIODEX_LIQUIDITY_ROUTE,
+  RIODEX_POOLS_ROUTE,
+  buildRioDexSurfaceHref,
+} from "@/lib/riodex/routes";
+
+const RIODEX_TERMINAL_ROUTE = buildRioDexSurfaceHref(
+  "rio1ma0g752dl0yujasnfs9yrk6uew7d0a2zrgvg62cfnlfftu2y0egqgpztmq"
+).pool;
+
 export const TOP_NAV = [
   { key: "overview", label: "Overview", href: "/overview" },
   { key: "launch", label: "Launch", href: "/createtoken" },
   { key: "terminals", label: "Terminals", href: "/rio" },
-  { key: "riodex", label: "RioDex", href: "/riodex" },
+  { key: "riodex", label: "RioDex", href: RIODEX_HOME_ROUTE },
   { key: "rioex", label: "RioEx", href: "/rioex" },
   { key: "rioexplorer", label: "RioExplorer", href: "/rioexplorer" },
   { key: "utilities", label: "Utilities", href: "/utilities" },
@@ -29,22 +42,22 @@ export const SECTION_NAV_MAP = {
     { label: "RUSD", href: "/rusd", icon: "RusdLogo" },
   ],
   riodex: [
-    { label: "Home", href: "/riodex", icon: "House" },
-    { label: "Markets", href: "/riodex/markets", icon: "ChartNoAxesCombined" },
-    { label: "Swap", href: "/riodex/swap", icon: "ArrowLeftRight" },
-    { label: "Liquidity", href: "/riodex/liquidity", icon: "Droplets" },
-    { label: "Pools", href: "/riodex/pools", icon: "Boxes" },
+    { label: "Home", href: RIODEX_HOME_ROUTE, icon: "House" },
+    { label: "Screener", href: RIODEX_SCREENER_ROUTE, icon: "ChartNoAxesCombined" },
+    { label: "Swap", href: RIODEX_SWAP_ROUTE, icon: "ArrowLeftRight" },
+    { label: "Liquidity", href: RIODEX_LIQUIDITY_ROUTE, icon: "Droplets" },
+    { label: "Pools", href: RIODEX_POOLS_ROUTE, icon: "Boxes" },
     {
       label: "Terminal",
-      href: "/riodex/pool/rio1ma0g752dl0yujasnfs9yrk6uew7d0a2zrgvg62cfnlfftu2y0egqgpztmq",
+      href: RIODEX_TERMINAL_ROUTE,
       icon: "CandlestickChart",
     },
   ],
   rioex: [
     { label: "Overview", href: "/rioex", icon: "Store" },
     { label: "Markets", href: "/rioex", icon: "BarChart3" },
-    { label: "Pairs", href: "/riodex/pools", icon: "Boxes" },
-    { label: "Terminal", href: "/riodex/markets", icon: "CandlestickChart" },
+    { label: "Pairs", href: RIODEX_POOLS_ROUTE, icon: "Boxes" },
+    { label: "Screener", href: RIODEX_SCREENER_ROUTE, icon: "CandlestickChart" },
     { label: "Discovery", href: "/rioex", icon: "Compass" },
   ],
   rioexplorer: [
@@ -54,7 +67,7 @@ export const SECTION_NAV_MAP = {
     { label: "Accounts", href: "/rioexplorer#accounts", icon: "Users" },
     { label: "SPO-20", href: "/rioexplorer/spo20", icon: "Library" },
     { label: "Contracts", href: "/rioexplorer#contracts", icon: "FileCode2" },
-    { label: "Markets", href: "/riodex/markets", icon: "BarChart3" },
+    { label: "Markets", href: RIODEX_SCREENER_ROUTE, icon: "BarChart3" },
   ],
   utilities: [
     { label: "RioPay", href: "/utilities#riopay", icon: "Wallet" },
@@ -80,4 +93,3 @@ export function getActiveSection(pathname: string) {
   if (pathname.startsWith("/utilities")) return "utilities";
   return "overview";
 }
-

@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
+import { useEffect, useMemo, useState } from "react";
 
 type RusdStateResponse = {
   asset: "RUSD";
@@ -64,15 +63,73 @@ function formatInt(value: number) {
 }
 
 function shortAddr(addr?: string | null) {
-  if (!addr) return "Not visible";
+  if (!addr || addr === "pending_live_contract_sync" || addr === "unavailable") {
+    return "Pending live contract sync";
+  }
   if (addr.length < 22) return addr;
   return `${addr.slice(0, 12)}...${addr.slice(-8)}`;
 }
 
-function statusTone(ratioPct: number) {
-  if (ratioPct >= 120) return "text-[#F4F1EA]";
-  if (ratioPct >= 100) return "text-[#CFC7BE]";
-  return "text-[#F4F1EA]";
+function sourceModeLabel(mode?: string) {
+  switch (mode) {
+    case "attestation_bridge":
+      return "Attestation bridge";
+    case "fallback_attestation_mode":
+    case "fallback_attestation_shape":
+      return "Fallback attestation mode";
+    default:
+      return mode ? mode.replace(/_/g, " ") : "Unknown";
+  }
+}
+
+function complianceLabel(ratioPct: number) {
+  if (ratioPct >= 120) return "Above reserve target";
+  if (ratioPct >= 100) return "Above minimum backing threshold";
+  if (ratioPct > 0) return "Below minimum backing threshold";
+  return "Not yet attested";
+}
+
+function derivePhase(overview: RusdStateResponse | null) {
+  if (!overview) {
+    return {
+      code: "phase_1",
+      title: "Phase 1 · Bootstrap Issuance",
+      short: "Bootstrap",
+      description:
+        "Early network formation stage. Settlement utility is established before reserve maturity is fully realized.",
+    };
+  }
+
+  const ratio = Number(overview.collateralization_ratio.percent.replace("%", "")) || 0;
+  const mode = overview.source?.mode ?? "";
+
+  if (ratio >= 120 && mode === "attestation_bridge") {
+    return {
+      code: "phase_3",
+      title: "Phase 3 · Full Backing",
+      short: "Fully Backed",
+      description:
+        "Reserve maturity achieved. RUSD operates as a fully backed, overcollateralized settlement asset.",
+    };
+  }
+
+  if (ratio > 0) {
+    return {
+      code: "phase_2",
+      title: "Phase 2 · Partial Collateralization",
+      short: "Partial",
+      description:
+        "Collateral support is present but not yet at full reserve maturity. Issuance is still governed under phased settlement discipline.",
+    };
+  }
+
+  return {
+    code: "phase_1",
+    title: "Phase 1 · Bootstrap Issuance",
+    short: "Bootstrap",
+    description:
+      "Settlement layer is active while reserve structure and attestation depth continue to mature.",
+  };
 }
 
 function KpiCard({
@@ -87,13 +144,13 @@ function KpiCard({
   sublabel: string;
 }) {
   return (
-    <div className="min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(139,0,0,0.10),rgba(255,255,255,0.02))] p-4 md:p-5 backdrop-blur-xl shadow-[0_18px_50px_rgba(0,0,0,0.32)]">
+    <div className="min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(139,0,0,0.10),rgba(255,255,255,0.02))] p-4 backdrop-blur-xl shadow-[0_18px_50px_rgba(0,0,0,0.32)] md:p-5">
       <div className="text-[10px] uppercase tracking-[0.22em] text-[#9E948C]">
         {label}
       </div>
 
       <div className="mt-3">
-        <div className="text-[clamp(1.35rem,2.4vw,2.35rem)] font-semibold leading-tight tracking-tight text-[#F4F1EA] break-all sm:break-normal">
+        <div className="break-all text-[clamp(1.35rem,2.4vw,2.35rem)] font-semibold leading-tight tracking-tight text-[#F4F1EA] sm:break-normal">
           {value}
         </div>
         {suffix ? (
@@ -130,9 +187,50 @@ function Section({
   );
 }
 
+function StatePill({
+  children,
+  strong = false,
+}: {
+  children: React.ReactNode;
+  strong?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-full border px-3 py-1.5 text-xs ${
+        strong
+          ? "border-[#8B0000]/50 bg-[rgba(139,0,0,0.22)] text-[#F4F1EA]"
+          : "border-white/10 bg-white/[0.05] text-[#CFC7BE]"
+      } shadow-[0_8px_20px_rgba(0,0,0,0.16)]`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function TableCell({
+  children,
+  muted = false,
+  align = "left",
+}: {
+  children: React.ReactNode;
+  muted?: boolean;
+  align?: "left" | "center" | "right";
+}) {
+  return (
+    <td
+      className={`border-t border-white/10 px-4 py-3 text-sm leading-6 ${
+        muted ? "text-[#9E948C]" : "text-[#F4F1EA]"
+      } ${align === "center" ? "text-center" : align === "right" ? "text-right" : "text-left"}`}
+    >
+      {children}
+    </td>
+  );
+}
+
 export default function RUSDPage() {
   const [overview, setOverview] = useState<RusdStateResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -140,6 +238,7 @@ export default function RUSDPage() {
     async function load() {
       try {
         setLoading(true);
+        setLoadError("");
 
         const response = await fetch("/api/rusd/state", {
           cache: "no-store",
@@ -156,6 +255,12 @@ export default function RUSDPage() {
         }
       } catch (error) {
         console.error("Failed to load RUSD state", error);
+        if (active) {
+          setOverview(null);
+          setLoadError(
+            error instanceof Error ? error.message : "Failed to load RUSD state",
+          );
+        }
       } finally {
         if (active) {
           setLoading(false);
@@ -163,42 +268,29 @@ export default function RUSDPage() {
       }
     }
 
-    load();
-    const timer = setInterval(load, 15000);
+    void load();
 
     return () => {
       active = false;
-      clearInterval(timer);
     };
   }, []);
 
-  if (!overview) {
-    return (
-      <div className="min-h-screen bg-[#0F0F1A] text-[#F4F1EA]">
-        <div className="relative z-10 flex min-h-screen items-center justify-center px-6 text-sm text-[#CFC7BE]">
-          Loading RUSD state...
-        </div>
-      </div>
-    );
-  }
-
-  const liveSupply = toNumber(overview.issued_supply.raw);
-  const supplyCeiling = toNumber(overview.supply_ceiling.raw);
-  const remainingCapacity = toNumber(overview.remaining_issuance_capacity.raw);
-  const liveBackingValue = toNumber(overview.backing_value.raw);
-  const ratioPct = Number(overview.collateralization_ratio.percent.replace("%", "")) || 120;
-  const dailyMintCap = toNumber(overview.mint_policy.daily_mint_cap.raw);
-  const epochMintCap = toNumber(overview.mint_policy.epoch_mint_cap.raw);
-  const epochWindowHours = overview.mint_policy.epoch_window_hours;
+  const liveSupply = toNumber(overview?.issued_supply?.raw);
+  const supplyCeiling = toNumber(overview?.supply_ceiling?.raw);
+  const liveBackingValue = toNumber(overview?.backing_value?.raw);
+  const ratioPct = overview
+    ? Number(overview.collateralization_ratio.percent.replace("%", "")) || 0
+    : 0;
+  const epochWindowHours = overview?.mint_policy?.epoch_window_hours ?? 0;
   const utilization = supplyCeiling > 0 ? (liveSupply / supplyCeiling) * 100 : 0;
   const collateralBuffer = Math.max(liveBackingValue - liveSupply, 0);
 
-  const complianceLabel =
-  ratioPct >= 120 ? "above_target" : ratioPct >= 100 ? "above_minimum" : "below_minimum";
+  const phase = useMemo(() => derivePhase(overview), [overview]);
+  const compliance = complianceLabel(ratioPct);
 
   return (
     <div className="min-h-screen bg-[#0F0F1A] text-[#F4F1EA]">
-      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_top_left,rgba(139,0,0,0.22),transparent_24%),radial-gradient(circle_at_top_right,rgba(139,0,0,0.10),transparent_20%),radial-gradient(circle_at_bottom_left,rgba(139,0,0,0.12),transparent_22%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(139,0,0,0.22),transparent_24%),radial-gradient(circle_at_top_right,rgba(139,0,0,0.10),transparent_20%),radial-gradient(circle_at_bottom_left,rgba(139,0,0,0.12),transparent_22%)]" />
 
       <div className="relative z-10">
         <header className="border-b border-white/10 bg-black/20 backdrop-blur-xl">
@@ -207,12 +299,12 @@ export default function RUSDPage() {
               <div className="flex min-w-0 items-start gap-4">
                 <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-[rgba(255,255,255,0.04)] shadow-[0_0_30px_rgba(139,0,0,0.25)]">
                   <img
-                   src={RUSD_LOGO}
-                   alt="RUSD Logo"
-                  width={40}
-                  height={40}
-                  className="h-10 w-10 object-contain"
-                 />
+                    src={RUSD_LOGO}
+                    alt="RUSD Logo"
+                    width={40}
+                    height={40}
+                    className="h-10 w-10 object-contain"
+                  />
                 </div>
 
                 <div className="min-w-0">
@@ -223,75 +315,89 @@ export default function RUSDPage() {
                     RUSD Terminal
                   </h1>
                   <p className="mt-3 max-w-4xl text-sm leading-7 text-[#CFC7BE] md:text-[15px]">
-                    RUSD is a USD-denominated T-Bill digital settlement asset issued on
-                    SpherioChain for payments, commerce, infrastructure settlement,
-                    accounting, billing, and enterprise or network usage. It is fully
-                    reserve-backed, overcollateralized, deterministic in supply,
-                    non-algorithmic, non-yield-bearing at launch, and issued only under
-                    strict rules. RUSD is not a governance token, not a speculative
-                    asset, and not dependent on RIO. RUSD serves settlement. RIO serves
-                    gas, fees, and governance.
+                    RUSD is SpherioChain’s USD-denominated settlement asset for payments,
+                    commerce, accounting, billing, infrastructure settlement, and enterprise
+                    or network usage. Its design progresses through three phases: Phase 1
+                    bootstrap issuance, Phase 2 partial collateralization, and Phase 3 full
+                    backing with overcollateralized reserve support. Throughout all phases,
+                    RUSD is structured as a deterministic, non-algorithmic settlement asset
+                    issued under strict monetary rules. It is not a governance token, not a
+                    speculative asset, and not a substitute for RIO. RUSD serves settlement.
+                    RIO serves gas, fees, and governance.
                   </p>
                 </div>
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-[#CFC7BE]">
-                  Integrity: LIVE
-                </div>
-                <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-[#CFC7BE]">
-                  Theme: Sovereign Crimson
-                </div>
-                <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-[#CFC7BE]">
-                  {loading ? "Refreshing..." : "Monetary Feed Active"}
-                </div>
+                <StatePill strong>Integrity: LIVE</StatePill>
+                <StatePill>Theme: Sovereign Crimson</StatePill>
+                <StatePill>{overview ? "Monetary Feed Active" : "Feed Degraded"}</StatePill>
               </div>
             </div>
           </div>
         </header>
 
         <main className="mx-auto max-w-[1700px] space-y-6 px-4 py-6 md:px-6 md:py-8 xl:px-8">
+          {!overview ? (
+            <div className="rounded-[28px] border border-amber-500/20 bg-[linear-gradient(180deg,rgba(139,0,0,0.14),rgba(255,255,255,0.02))] p-5 text-sm leading-7 text-[#CFC7BE]">
+              <div className="text-[10px] uppercase tracking-[0.22em] text-[#F4F1EA]">
+                Degraded state
+              </div>
+              <div className="mt-3">
+                RUSD state is currently unavailable from the backend. The terminal remains online
+                so the settlement posture, attestation framing, and policy structure can still be
+                reviewed while the live state feed is restored.
+              </div>
+              {loadError ? (
+                <div className="mt-2 text-[#9E948C]">Backend note: {loadError}</div>
+              ) : null}
+            </div>
+          ) : null}
+
           <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard
               label="Issued Supply"
-              value={overview.issued_supply.formatted}
+              value={overview?.issued_supply?.formatted ?? "—"}
               suffix="RUSD"
-              sublabel="Live on-chain current supply"
+              sublabel="Live settlement units in circulation"
             />
             <KpiCard
               label="Supply Ceiling"
-              value={overview.supply_ceiling.formatted}
+              value={overview?.supply_ceiling?.formatted ?? "—"}
               suffix="RUSD"
-              sublabel="Policy maximum supply ceiling"
+              sublabel="Active phase issuance ceiling"
             />
             <KpiCard
-              label="Backing Value"
-              value={overview.backing_value.formatted}
+              label="Backing Reference"
+              value={overview?.backing_value?.formatted ?? "—"}
               suffix="RUSD"
-              sublabel="120% collateral backing value"
+              sublabel="Current reserve / backing reference value"
             />
             <KpiCard
-              label="Backing Ratio"
-              value={overview.collateralization_ratio.percent}
-              sublabel="Backing value divided by issued supply"
+              label="Coverage Ratio"
+              value={overview?.collateralization_ratio?.percent ?? "—"}
+              sublabel="Current backing posture under active phase"
             />
           </section>
 
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_1fr_1fr]">
-            <Section title="Institutional Overview" right="Sovereign Settlement Layer">
-              <div className="grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+            <Section title="Institutional Overview" right={phase.title}>
+              <div className="grid gap-4">
                 <div className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(139,0,0,0.16),rgba(255,255,255,0.03))] p-5">
                   <div className="text-[10px] uppercase tracking-[0.20em] text-[#9E948C]">
                     Nature of RUSD
                   </div>
-                  <div className="mt-4 grid grid-cols-1 gap-4 text-sm leading-7 md:grid-cols-2">
+
+                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div className="rounded-[20px] border border-white/10 bg-black/10 p-4">
                       <div className="text-xs uppercase tracking-[0.16em] text-[#9E948C]">
                         RUSD Is
                       </div>
-                      <div className="mt-3 space-y-1 text-[#CFC7BE]">
-                        <div>• Fully reserve-backed</div>
-                        <div>• Overcollateralized</div>
+                      <div className="mt-3 space-y-1 text-sm leading-7 text-[#CFC7BE]">
+                        <div>• Phase-structured settlement asset</div>
+                        <div>• Bootstrap issuance in Phase 1</div>
+                        <div>• Partial collateralization in Phase 2</div>
+                        <div>• Full backing and reserve maturity in Phase 3</div>
                         <div>• Deterministic in supply</div>
                         <div>• Non-algorithmic</div>
                         <div>• Non-yield-bearing at launch</div>
@@ -303,13 +409,13 @@ export default function RUSDPage() {
                       <div className="text-xs uppercase tracking-[0.16em] text-[#9E948C]">
                         RUSD Is Not
                       </div>
-                      <div className="mt-3 space-y-1 text-[#CFC7BE]">
+                      <div className="mt-3 space-y-1 text-sm leading-7 text-[#CFC7BE]">
                         <div>• A governance token</div>
                         <div>• A security or profit instrument</div>
                         <div>• An algorithmic stablecoin</div>
-                        <div>• A partially reserved instrument</div>
-                        <div>• A speculative or yield product</div>
-                        <div>• Operationally mixed with RIO</div>
+                        <div>• A speculative trading asset</div>
+                        <div>• A substitute for RIO</div>
+                        <div>• Operationally mixed with gas / governance logic</div>
                       </div>
                     </div>
                   </div>
@@ -320,17 +426,27 @@ export default function RUSDPage() {
                     Functional Separation
                   </div>
                   <div className="mt-3 text-sm leading-7 text-[#CFC7BE]">
-                    RUSD and RIO can never mix. RUSD is the settlement token for
-                    billing, payments, commerce, accounting, and infrastructure usage.
-                    RIO is separate and serves gas, fees, and governance. Their roles,
-                    custody logic, policy framing, and balance interpretation must remain
-                    distinct across the terminal, indexer, and public presentation layer.
+                    RUSD and RIO can never mix. RUSD is the settlement token for billing,
+                    payments, commerce, accounting, and infrastructure usage. RIO is separate
+                    and serves gas, fees, and governance. Their roles, custody logic, issuance
+                    framing, reserve posture, and public representation must remain distinct
+                    across the terminal, indexer, attestation layer, and explorer surfaces.
+                  </div>
+                </div>
+
+                <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
+                  <div className="text-[10px] uppercase tracking-[0.20em] text-[#9E948C]">
+                    Current phase posture
+                  </div>
+                  <div className="mt-3 text-sm leading-7 text-[#CFC7BE]">
+                    <div className="font-semibold text-[#F4F1EA]">{phase.title}</div>
+                    <div className="mt-2">{phase.description}</div>
                   </div>
                 </div>
               </div>
             </Section>
 
-            <Section title="Monetary Overview" right="Live Registry">
+            <Section title="Monetary Registry" right="Operational Truth">
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-[20px] border border-white/10 bg-white/[0.03] p-4">
@@ -338,7 +454,7 @@ export default function RUSDPage() {
                       Current Supply
                     </div>
                     <div className="mt-2 text-2xl font-semibold text-[#F4F1EA]">
-                      {overview.issued_supply.formatted}
+                      {overview?.issued_supply?.formatted ?? "—"}
                     </div>
                     <div className="mt-1 text-sm text-[#CFC7BE]">RUSD</div>
                   </div>
@@ -348,7 +464,7 @@ export default function RUSDPage() {
                       Remaining Capacity
                     </div>
                     <div className="mt-2 text-2xl font-semibold text-[#F4F1EA]">
-                      {overview.remaining_issuance_capacity.formatted}
+                      {overview?.remaining_issuance_capacity?.formatted ?? "—"}
                     </div>
                     <div className="mt-1 text-sm text-[#CFC7BE]">RUSD</div>
                   </div>
@@ -358,7 +474,7 @@ export default function RUSDPage() {
                       Daily Mint Cap
                     </div>
                     <div className="mt-2 text-2xl font-semibold text-[#F4F1EA]">
-                      {overview.mint_policy.daily_mint_cap.formatted}
+                      {overview?.mint_policy?.daily_mint_cap?.formatted ?? "—"}
                     </div>
                     <div className="mt-1 text-sm text-[#CFC7BE]">RUSD</div>
                   </div>
@@ -368,10 +484,10 @@ export default function RUSDPage() {
                       Epoch Mint Cap
                     </div>
                     <div className="mt-2 text-2xl font-semibold text-[#F4F1EA]">
-                      {overview.mint_policy.epoch_mint_cap.formatted}
+                      {overview?.mint_policy?.epoch_mint_cap?.formatted ?? "—"}
                     </div>
                     <div className="mt-1 text-sm text-[#CFC7BE]">
-                      {epochWindowHours}h window
+                      {overview ? `${epochWindowHours}h window` : "—"}
                     </div>
                   </div>
                 </div>
@@ -383,18 +499,18 @@ export default function RUSDPage() {
                         Issuance Utilization
                       </div>
                       <div className="mt-2 text-4xl font-semibold text-[#F4F1EA]">
-                        {utilization.toFixed(1)}%
+                        {overview ? `${utilization.toFixed(1)}%` : "—"}
                       </div>
                     </div>
                     <div className="text-right text-sm text-[#CFC7BE]">
-                      current supply / ceiling
+                      current supply / active ceiling
                     </div>
                   </div>
 
                   <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/10">
                     <div
                       className="h-full rounded-full bg-[linear-gradient(90deg,#8B0000,#B22222,#F4F1EA)]"
-                      style={{ width: `${Math.min(utilization, 100)}%` }}
+                      style={{ width: `${overview ? Math.min(utilization, 100) : 0}%` }}
                     />
                   </div>
                 </div>
@@ -403,103 +519,196 @@ export default function RUSDPage() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="text-[10px] uppercase tracking-[0.18em] text-[#9E948C]">
-                        Backing Coverage
+                        Reserve / Backing Posture
                       </div>
-                      <div className={`mt-2 text-4xl font-semibold ${statusTone(ratioPct)}`}>
-                        {overview.collateralization_ratio.percent}
+                      <div className="mt-2 text-3xl font-semibold text-[#F4F1EA]">
+                        {overview?.collateralization_ratio?.percent ?? "—"}
                       </div>
                     </div>
-                    <div className="text-right text-sm text-[#CFC7BE]">
-                      collateral / issued supply
-                    </div>
+                    <div className="text-right text-sm text-[#CFC7BE]">{compliance}</div>
                   </div>
 
                   <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/10">
                     <div
                       className="h-full rounded-full bg-[linear-gradient(90deg,#8B0000,#B22222,#F4F1EA)]"
-                      style={{ width: `${Math.min((ratioPct / 160) * 100, 100)}%` }}
+                      style={{
+                        width: `${overview ? Math.min((ratioPct / 160) * 100, 100) : 0}%`,
+                      }}
                     />
                   </div>
                 </div>
-              </div>
-            </Section>
 
-            <Section title="Institutional Registry" right="Operational Truth">
-              <div className="space-y-4">
-                <div className="rounded-[20px] border border-white/10 bg-white/[0.03] p-4">
+                <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-[#9E948C]">
-                    Treasury Multisig
+                    Institutional Registry
                   </div>
-                  <div className="mt-3 break-all text-sm leading-7 text-[#CFC7BE]">
-                    {overview.treasury_multisig}
-                  </div>
-                </div>
-
-                <div className="rounded-[20px] border border-white/10 bg-white/[0.03] p-4">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-[#9E948C]">
-                    Token Contract
-                  </div>
-                  <div className="mt-3 break-all text-sm leading-7 text-[#CFC7BE]">
-                    {overview.contract_address}
-                  </div>
-                </div>
-
-                <div className="rounded-[20px] border border-white/10 bg-white/[0.03] p-4">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-[#9E948C]">
-                    Compliance State
-                  </div>
-                  <div className="mt-3 inline-flex rounded-full border border-white/10 bg-[rgba(139,0,0,0.18)] px-3 py-1 text-sm text-[#F4F1EA]">
-                    {complianceLabel}
-                  </div>
-                </div>
-
-                <div className="rounded-[20px] border border-white/10 bg-white/[0.03] p-4">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-[#9E948C]">
-                    Target / Minimum Ratio
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-3">
-                    <div className="rounded-[16px] border border-white/10 bg-black/10 p-3">
-                      <div className="text-xs text-[#9E948C]">Target</div>
-                      <div className="mt-1 text-xl font-semibold text-[#F4F1EA]">
-                        120%
-                      </div>
-                    </div>
-                    <div className="rounded-[16px] border border-white/10 bg-black/10 p-3">
-                      <div className="text-xs text-[#9E948C]">Minimum</div>
-                      <div className="mt-1 text-xl font-semibold text-[#F4F1EA]">
-                        100%
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-[20px] border border-white/10 bg-white/[0.03] p-4">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-[#9E948C]">
-                    Collateral Buffer
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-[#F4F1EA]">
-                    {formatInt(collateralBuffer)}
-                  </div>
-                  <div className="mt-1 text-sm text-[#CFC7BE]">
-                    backing surplus above issued supply
-                  </div>
-                </div>
-
-                <div className="rounded-[20px] border border-white/10 bg-white/[0.03] p-4">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-[#9E948C]">
-                    Live Update / Source
-                  </div>
-                  <div className="mt-2 text-sm leading-7 text-[#CFC7BE]">
-                    <div>Updated: {new Date(overview.updated_at).toLocaleString()}</div>
-                    <div>Mode: {overview.source.mode}</div>
+                  <div className="mt-3 space-y-2 text-sm leading-7 text-[#CFC7BE]">
                     <div>
-                      Policy Source: {shortAddr(overview.treasury_multisig)}
+                      Treasury Multisig:{" "}
+                      <span className="text-[#F4F1EA]">
+                        {shortAddr(overview?.treasury_multisig)}
+                      </span>
+                    </div>
+                    <div>
+                      Token Contract:{" "}
+                      <span className="text-[#F4F1EA]">
+                        {shortAddr(overview?.contract_address)}
+                      </span>
+                    </div>
+                    <div>
+                      Source Mode:{" "}
+                      <span className="text-[#F4F1EA]">
+                        {sourceModeLabel(overview?.source?.mode)}
+                      </span>
+                    </div>
+                    <div>
+                      Updated:{" "}
+                      <span className="text-[#F4F1EA]">
+                        {overview?.updated_at
+                          ? new Date(overview.updated_at).toLocaleString()
+                          : "—"}
+                      </span>
+                    </div>
+                    <div>
+                      Buffer:{" "}
+                      <span className="text-[#F4F1EA]">{formatInt(collateralBuffer)}</span>
                     </div>
                   </div>
                 </div>
               </div>
             </Section>
           </div>
+
+          <Section
+            title="Attestation & Reserve Evolution"
+            right={`Current phase: ${phase.short}`}
+          >
+            <div className="overflow-x-auto">
+              <table className="min-w-full border-separate border-spacing-0 overflow-hidden rounded-[22px] border border-white/10 bg-white/[0.02]">
+                <thead>
+                  <tr className="bg-white/[0.04]">
+                    <th className="px-4 py-3 text-left text-[11px] uppercase tracking-[0.18em] text-[#9E948C]">
+                      Dimension
+                    </th>
+                    <th className="px-4 py-3 text-left text-[11px] uppercase tracking-[0.18em] text-[#9E948C]">
+                      Phase 1 · Bootstrap
+                    </th>
+                    <th className="px-4 py-3 text-left text-[11px] uppercase tracking-[0.18em] text-[#9E948C]">
+                      Phase 2 · Partial
+                    </th>
+                    <th className="px-4 py-3 text-left text-[11px] uppercase tracking-[0.18em] text-[#9E948C]">
+                      Phase 3 · Fully Backed
+                    </th>
+                    <th className="px-4 py-3 text-left text-[11px] uppercase tracking-[0.18em] text-[#9E948C]">
+                      Current / Evidence
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  <tr>
+                    <TableCell>Settlement posture</TableCell>
+                    <TableCell muted>Bootstrap settlement layer established</TableCell>
+                    <TableCell muted>Settlement grows with partial reserve support</TableCell>
+                    <TableCell muted>Institutional settlement-grade maturity</TableCell>
+                    <TableCell>{phase.title}</TableCell>
+                  </tr>
+
+                  <tr>
+                    <TableCell>Collateral / reserve posture</TableCell>
+                    <TableCell muted>Not yet fully collateralized</TableCell>
+                    <TableCell muted>Partial collateralization introduced</TableCell>
+                    <TableCell muted>Full backing with overcollateralized support</TableCell>
+                    <TableCell>
+                      {overview?.collateralization_ratio?.percent ?? "—"} · {compliance}
+                    </TableCell>
+                  </tr>
+
+                  <tr>
+                    <TableCell>Issuance discipline</TableCell>
+                    <TableCell muted>Bootstrap issuance under strict limits</TableCell>
+                    <TableCell muted>Controlled expansion with reserve progression</TableCell>
+                    <TableCell muted>Reserve-mature issuance discipline</TableCell>
+                    <TableCell>
+                      Daily {overview?.mint_policy?.daily_mint_cap?.formatted ?? "—"} · Epoch{" "}
+                      {overview?.mint_policy?.epoch_mint_cap?.formatted ?? "—"}
+                    </TableCell>
+                  </tr>
+
+                  <tr>
+                    <TableCell>Attestation depth</TableCell>
+                    <TableCell muted>Initial operational disclosure</TableCell>
+                    <TableCell muted>Periodic backing / reserve evidence</TableCell>
+                    <TableCell muted>Institutional attestation and reserve maturity</TableCell>
+                    <TableCell>{sourceModeLabel(overview?.source?.mode)}</TableCell>
+                  </tr>
+
+                  <tr>
+                    <TableCell>Periodic update rhythm</TableCell>
+                    <TableCell muted>Operational refresh cadence begins</TableCell>
+                    <TableCell muted>Scheduled periodic evidence updates</TableCell>
+                    <TableCell muted>Formal recurring attestation cadence</TableCell>
+                    <TableCell>
+                      {overview?.updated_at
+                        ? new Date(overview.updated_at).toLocaleString()
+                        : "No recent update"}
+                    </TableCell>
+                  </tr>
+
+                  <tr>
+                    <TableCell>Explorer iteration path</TableCell>
+                    <TableCell muted>Settlement overview surface</TableCell>
+                    <TableCell muted>Policy + reserve progression surface</TableCell>
+                    <TableCell muted>Full institutional attestation surface</TableCell>
+                    <TableCell>Reusable for RioExplorer institutional asset pages</TableCell>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-3">
+              <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-[#9E948C]">
+                  Current source mode
+                </div>
+                <div className="mt-2 text-lg font-semibold text-[#F4F1EA]">
+                  {sourceModeLabel(overview?.source?.mode)}
+                </div>
+                <div className="mt-2 text-sm leading-7 text-[#CFC7BE]">
+                  This indicates whether the page is reading live attestation bridge data
+                  or operating in fallback disclosure mode.
+                </div>
+              </div>
+
+              <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-[#9E948C]">
+                  Active ceiling
+                </div>
+                <div className="mt-2 text-lg font-semibold text-[#F4F1EA]">
+                  {overview?.supply_ceiling?.formatted ?? "—"} RUSD
+                </div>
+                <div className="mt-2 text-sm leading-7 text-[#CFC7BE]">
+                  This should represent the issuance ceiling under the current phase,
+                  not an overstated final-state ceiling.
+                </div>
+              </div>
+
+              <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-[#9E948C]">
+                  Periodic update posture
+                </div>
+                <div className="mt-2 text-lg font-semibold text-[#F4F1EA]">
+                  {overview?.updated_at
+                    ? new Date(overview.updated_at).toLocaleTimeString()
+                    : "Unavailable"}
+                </div>
+                <div className="mt-2 text-sm leading-7 text-[#CFC7BE]">
+                  This module is designed to mature into a periodic attestation surface with
+                  cleaner evidence history and institutional update discipline.
+                </div>
+              </div>
+            </div>
+          </Section>
         </main>
       </div>
     </div>
