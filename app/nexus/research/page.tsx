@@ -1,15 +1,37 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+type NexusProject = {
+  id: string;
+  name: string;
+  description?: string | null;
+};
+
 export default function NexusResearchPage() {
   const router = useRouter();
+  const [projects, setProjects] = useState<NexusProject[]>([]);
+  const [projectId, setProjectId] = useState("");
   const [topic, setTopic] = useState("");
   const [depth, setDepth] = useState("standard");
   const [sources, setSources] = useState("combined");
   const [format, setFormat] = useState("report");
+
+  async function loadProjects() {
+    try {
+      const res = await fetch("/api/riomind/projects?limit=100", { cache: "no-store" });
+      const data = await res.json();
+      setProjects(Array.isArray(data.projects) ? data.projects : []);
+    } catch {
+      setProjects([]);
+    }
+  }
+
+  useEffect(() => {
+    void loadProjects();
+  }, []);
 
   function startResearch() {
     const cleanTopic = topic.trim();
@@ -21,6 +43,9 @@ export default function NexusResearchPage() {
       `Research goal: ${cleanTopic}`,
       `Research depth: ${depth}`,
       `Source preference: ${sources}`,
+      projectId
+        ? `Project context: ${projects.find((project) => project.id === projectId)?.name || projectId}`
+        : "Project context: none selected",
       `Output format: ${format}`,
       "",
       "Please produce a structured research plan first, then continue with the research answer using clear sections, citations where web sources are used, tables where helpful, and action-ready recommendations.",
@@ -56,6 +81,24 @@ export default function NexusResearchPage() {
             <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/35">
               Research Goal
             </div>
+
+            <label className="mt-3 block rounded-3xl border border-white/10 bg-black/24 p-4">
+              <div className="text-xs font-black uppercase tracking-[0.18em] text-cyan-100/50">
+                Project Memory
+              </div>
+              <select
+                value={projectId}
+                onChange={(event) => setProjectId(event.target.value)}
+                className="mt-2 w-full rounded-2xl border border-white/10 bg-black/35 px-3 py-2 text-sm font-bold text-white"
+              >
+                <option value="">No project selected</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <textarea
               value={topic}
@@ -107,11 +150,13 @@ export default function NexusResearchPage() {
                   onChange={(event) => setFormat(event.target.value)}
                   className="mt-2 w-full rounded-2xl border border-white/10 bg-black/35 px-3 py-2 text-sm font-bold text-white"
                 >
-                  <option value="report">Report</option>
-                  <option value="briefing">Briefing</option>
-                  <option value="spreadsheet">Spreadsheet</option>
-                  <option value="presentation">Presentation</option>
-                  <option value="notebook">Research Notebook</option>
+                  <option value="report">📄 Report</option>
+                  <option value="briefing">📋 Executive Brief</option>
+                  <option value="spreadsheet">📊 Spreadsheet</option>
+                  <option value="presentation">📽 PowerPoint Briefing</option>
+                  <option value="notebook">🧠 Research Notebook</option>
+                  <option value="market_analysis">📈 Market Analysis</option>
+                  <option value="forecast_model">🔮 Forecast Model</option>
                 </select>
               </label>
             </div>

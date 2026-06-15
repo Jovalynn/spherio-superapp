@@ -2825,6 +2825,7 @@ NEXUS_ATTACHED_FILE_CONTEXT_END`
         {sidebarSection("workspaces", "Workspaces", "🧩", [
           { title: "Artifact Workspace", icon: "📁", subtitle: "Generated files", href: "/nexus/workspace" },
           { title: "Research Workspace", icon: "🔍", subtitle: "Deep research", href: "/nexus/research" },
+          { title: "Data Analytics Workspace", icon: "📈", subtitle: "Data, charts, forecasts", href: "/nexus/analytics" },
           { title: "Code Workspace", icon: "💻", subtitle: "Repository agent", disabled: true },
           { title: "Project Builder", icon: "🧱", subtitle: "Product planning", disabled: true },
           { title: "Documents", icon: "📄", subtitle: "Docs and files", disabled: true },
