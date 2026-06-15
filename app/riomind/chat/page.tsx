@@ -882,6 +882,7 @@ function artifactDrawerMetrics(artifact: NexusArtifact) {
 
 export default function RioMindChatPage() {
   const [message, setMessage] = useState("");
+  const [urlPromptHydrated, setUrlPromptHydrated] = useState(false);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [streamingAssistantId, setStreamingAssistantId] = useState<string | null>(null);
   const composerShellRef = useRef<HTMLFormElement | null>(null);
@@ -961,6 +962,21 @@ export default function RioMindChatPage() {
     () => projectMemories.slice(0, 4),
     [projectMemories]
   );
+
+  useEffect(() => {
+    if (urlPromptHydrated) return;
+
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const prompt = params.get("prompt");
+
+      if (prompt && !message.trim()) {
+        setMessage(prompt);
+      }
+    }
+
+    setUrlPromptHydrated(true);
+  }, [message, urlPromptHydrated]);
 
   const messages = activeConversationId
     ? messagesByConversation[activeConversationId] ?? []
@@ -2808,10 +2824,11 @@ NEXUS_ATTACHED_FILE_CONTEXT_END`
 
         {sidebarSection("workspaces", "Workspaces", "🧩", [
           { title: "Artifact Workspace", icon: "📁", subtitle: "Generated files", href: "/nexus/workspace" },
-          { title: "Research Workspace", icon: "🔍", subtitle: "Deep research", disabled: true },
+          { title: "Research Workspace", icon: "🔍", subtitle: "Deep research", href: "/nexus/research" },
           { title: "Code Workspace", icon: "💻", subtitle: "Repository agent", disabled: true },
           { title: "Project Builder", icon: "🧱", subtitle: "Product planning", disabled: true },
           { title: "Documents", icon: "📄", subtitle: "Docs and files", disabled: true },
+          { title: "Project Memory", icon: "🧠", subtitle: "Long-term project context", href: "/nexus/projects" },
         ])}
 
         {sidebarSection("platform", "Platform", "⚙️", [
