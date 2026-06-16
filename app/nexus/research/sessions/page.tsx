@@ -27,6 +27,10 @@ export default function ResearchSessionsPage() {
   const [projectId, setProjectId] = useState("");
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [savedMemoryIds, setSavedMemoryIds] = useState<Record<string, boolean>>({});
+  const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [exportingKey, setExportingKey] = useState<string | null>(null);
+  const [exportUrls, setExportUrls] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
   async function loadSessions() {
@@ -71,8 +75,11 @@ export default function ResearchSessionsPage() {
       `Research depth: ${session.depth}`,
       `Source preference: ${session.sources}`,
       `Output format: ${session.outputType}`,
+      projectId
+        ? `Project Memory selected: ${projects.find((project) => project.id === projectId)?.name || projectId}`
+        : "Project Memory selected: none",
       "",
-      "Continue the research with a structured update, findings, recommendations, and next actions.",
+      "Continue the research with a structured update, findings, recommendations, next actions, and use the selected Project Memory context if available.",
     ].join("\n");
 
     window.location.href = `/riomind/chat?prompt=${encodeURIComponent(prompt)}`;
@@ -113,10 +120,103 @@ export default function ResearchSessionsPage() {
 
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "memory_save_failed");
+      setSavedMemoryIds((current) => ({ ...current, [session.id]: true }));
     } catch {
       setError("Nexus could not save this session to Project Memory.");
     } finally {
       setSavingId(null);
+    }
+  }
+
+  async function archiveSession(session: ResearchSession) {
+    setArchivingId(session.id);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/riomind/research/sessions/${encodeURIComponent(session.id)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status: "archived" }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "archive_failed");
+
+      setSessions((current) =>
+        current.map((item) => (item.id === session.id ? data.session : item))
+      );
+    } catch {
+      setError("Nexus could not archive this research session.");
+    } finally {
+      setArchivingId(null);
+    }
+  }
+
+  async function ensureReportForSession(session: ResearchSession) {
+    const reportRes = await fetch("/api/riomind/research/reports", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sessionId: session.id,
+        title: `${session.title} Report`,
+        reportContent: [
+          `Research title: ${session.title}`,
+          "",
+          `Research goal: ${session.goal}`,
+          "",
+          `Depth: ${session.depth}`,
+          `Sources: ${session.sources}`,
+          `Output type: ${session.outputType}`,
+          `Status: ${session.status}`,
+        ].join("\n"),
+        reportType: session.outputType || "report",
+      }),
+    });
+
+    const reportData = await reportRes.json();
+    if (!reportRes.ok || !reportData.ok) {
+      throw new Error(reportData.error || "report_create_failed");
+    }
+
+    return reportData.report;
+  }
+
+  async function exportSession(session: ResearchSession, format: "pdf" | "excel" | "pptx") {
+    const key = `${session.id}:${format}`;
+    setExportingKey(key);
+    setError(null);
+
+    try {
+      const report = await ensureReportForSession(session);
+
+      const exportRes = await fetch(
+        `/api/riomind/research/reports/${encodeURIComponent(report.id)}/export`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ format }),
+        }
+      );
+
+      const exportData = await exportRes.json();
+      if (!exportRes.ok || !exportData.ok) {
+        throw new Error(exportData.error || "export_failed");
+      }
+
+      const downloadUrl = exportData.artifact?.downloadUrl;
+      if (downloadUrl) {
+        setExportUrls((current) => ({ ...current, [key]: downloadUrl }));
+      }
+    } catch {
+      setError(`Nexus could not export this research session as ${format.toUpperCase()}.`);
+    } finally {
+      setExportingKey(null);
     }
   }
 
@@ -212,6 +312,12 @@ export default function ResearchSessionsPage() {
                   </div>
                 </div>
 
+                {savedMemoryIds[session.id] ? (
+                  <div className="mt-4 rounded-2xl border border-emerald-300/15 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-100">
+                    Saved to Project Memory.
+                  </div>
+                ) : null}
+
                 <div className="mt-5 flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -228,14 +334,58 @@ export default function ResearchSessionsPage() {
                   >
                     {savingId === session.id ? "Saving..." : "Save to Memory"}
                   </button>
+
                   <button
                     type="button"
-                    disabled
-                    className="rounded-2xl border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-black text-white/35"
+                    onClick={() => void exportSession(session, "pdf")}
+                    disabled={exportingKey === `${session.id}:pdf`}
+                    className="rounded-2xl border border-cyan-300/20 bg-cyan-500/10 px-3 py-2 text-xs font-black text-cyan-100 disabled:opacity-35"
                   >
-                    Archive
+                    {exportingKey === `${session.id}:pdf` ? "Exporting..." : "PDF"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void exportSession(session, "excel")}
+                    disabled={exportingKey === `${session.id}:excel`}
+                    className="rounded-2xl border border-cyan-300/20 bg-cyan-500/10 px-3 py-2 text-xs font-black text-cyan-100 disabled:opacity-35"
+                  >
+                    {exportingKey === `${session.id}:excel` ? "Exporting..." : "Excel"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void exportSession(session, "pptx")}
+                    disabled={exportingKey === `${session.id}:pptx`}
+                    className="rounded-2xl border border-cyan-300/20 bg-cyan-500/10 px-3 py-2 text-xs font-black text-cyan-100 disabled:opacity-35"
+                  >
+                    {exportingKey === `${session.id}:pptx` ? "Exporting..." : "PPT"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void archiveSession(session)}
+                    disabled={session.status === "archived" || archivingId === session.id}
+                    className="rounded-2xl border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-black text-white/45 transition hover:border-white/20 hover:text-white/70 disabled:opacity-35"
+                  >
+                    {archivingId === session.id ? "Archiving..." : session.status === "archived" ? "Archived" : "Archive"}
                   </button>
                 </div>
+
+                {["pdf", "excel", "pptx"].some((format) => exportUrls[`${session.id}:${format}`]) ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {(["pdf", "excel", "pptx"] as const).map((format) =>
+                      exportUrls[`${session.id}:${format}`] ? (
+                        <a
+                          key={format}
+                          href={exportUrls[`${session.id}:${format}`]}
+                          className="rounded-2xl border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-black text-white/60 transition hover:text-cyan-100"
+                        >
+                          Download {format.toUpperCase()}
+                        </a>
+                      ) : null
+                    )}
+                  </div>
+                ) : null}
               </article>
             ))
           ) : (
