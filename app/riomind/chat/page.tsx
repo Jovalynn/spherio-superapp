@@ -2824,7 +2824,10 @@ NEXUS_ATTACHED_FILE_CONTEXT_END`
 
         {sidebarSection("workspaces", "Workspaces", "🧩", [
           { title: "Artifact Workspace", icon: "📁", subtitle: "Generated files", href: "/nexus/workspace" },
-          { title: "Research Workspace", icon: "🔍", subtitle: "Deep research", href: "/nexus/research" },
+          { title: "Research Workspace", icon: "🔍", subtitle: "Start new research", href: "/nexus/research" },
+          { title: "Research Sessions", icon: "📚", subtitle: "Saved research tasks", href: "/nexus/research/sessions" },
+          { title: "Saved Reports", icon: "📑", subtitle: "Research report library", href: "/nexus/research/reports" },
+          { title: "Research Templates", icon: "🧩", subtitle: "Reusable research flows", href: "/nexus/research/templates" },
           { title: "Data Analytics Workspace", icon: "📈", subtitle: "Data, charts, forecasts", href: "/nexus/analytics" },
           { title: "Code Workspace", icon: "💻", subtitle: "Repository agent", disabled: true },
           { title: "Project Builder", icon: "🧱", subtitle: "Product planning", disabled: true },
