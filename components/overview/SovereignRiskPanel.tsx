@@ -30,7 +30,6 @@ export function SovereignRiskPanel({
         </div>
       </div>
 
-      {/* Placeholder: drop in your existing RiskGauge component here */}
       <div className="mt-6 rounded-2xl border border-slate-200/70 bg-white/70 p-6">
         <div className="text-sm text-slate-700">
           Mount <span className="font-mono">components/RiskGauge.tsx</span> here.

@@ -1,0 +1,550 @@
+import crypto from "crypto";
+import fs from "fs/promises";
+import path from "path";
+
+export type ExcelRow = Record<string, unknown>;
+
+export type CreateExcelArtifactInput = {
+  ownerKey: string;
+  title?: string;
+  columns?: unknown;
+  rows?: unknown;
+  mode?: unknown;
+};
+
+export type CreateExcelArtifactResult = {
+  id: string;
+  type: "excel";
+  name: string;
+  title: string;
+  path: string;
+  downloadUrl: string;
+  rowCount: number;
+  columnCount: number;
+  sheets: string[];
+};
+
+type AttendanceSummary = {
+  sheetName: string;
+  dateColumnCount: number;
+  totalPresent: number;
+  totalAbsent: number;
+  totalBlank: number;
+  totalMarked: number;
+  overallAttendancePercent: number;
+};
+
+const DEFAULT_COLUMNS = ["Item", "Value"];
+
+function safeFileTitle(value: unknown) {
+  const raw = typeof value === "string" && value.trim() ? value.trim() : "nexus workbook";
+  return raw
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80) || "nexus workbook";
+}
+
+function normalizeOwnerKey(value: string) {
+  return value.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 80) || "local_dev";
+}
+
+function normalizeColumns(columns: unknown, rows: ExcelRow[]) {
+  if (Array.isArray(columns)) {
+    const cleaned = columns
+      .map((column) => String(column ?? "").trim())
+      .filter(Boolean);
+
+    if (cleaned.length > 0) return Array.from(new Set(cleaned));
+  }
+
+  const discovered = new Set<string>();
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (key && key !== "S/N") discovered.add(key);
+    }
+  }
+
+  return discovered.size > 0 ? Array.from(discovered) : DEFAULT_COLUMNS;
+}
+
+function normalizeRows(rows: unknown, columns?: string[]) {
+  if (!Array.isArray(rows)) return [];
+
+  return rows.map((row) => {
+    if (row && typeof row === "object" && !Array.isArray(row)) {
+      return { ...(row as ExcelRow) };
+    }
+
+    if (Array.isArray(row)) {
+      const output: ExcelRow = {};
+      const headers = columns && columns.length > 0 ? columns : DEFAULT_COLUMNS;
+      headers.forEach((header, index) => {
+        output[header] = row[index] ?? "";
+      });
+      return output;
+    }
+
+    return { Item: String(row ?? ""), Value: "" };
+  });
+}
+
+function valueToCell(value: unknown) {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return value;
+  if (typeof value === "number") return value;
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  return String(value);
+}
+
+function lower(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function findColumn(columns: string[], candidates: string[]) {
+  return columns.find((column) => {
+    const normalized = lower(column);
+    return candidates.some((candidate) => normalized.includes(candidate));
+  });
+}
+
+function isDateLikeColumn(column: string) {
+  const normalized = lower(column);
+
+  if (/^(mon|tue|wed|thu|fri|sat|sun)(day)?\b/.test(normalized)) return true;
+  if (/^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b/.test(normalized)) return true;
+  if (/^day\s*\d+$/i.test(column.trim())) return true;
+  if (/^\d{1,2}[/-]\d{1,2}([/-]\d{2,4})?$/.test(column.trim())) return true;
+  if (/^\d{1,2}$/.test(column.trim())) return true;
+
+  return false;
+}
+
+function detectDateColumns(columns: string[]) {
+  return columns.filter(isDateLikeColumn);
+}
+
+function shouldUseComplexWorkbook(columns: string[], mode: unknown) {
+  const requestedMode = lower(mode);
+  if (
+    requestedMode.includes("complex") ||
+    requestedMode.includes("attendance") ||
+    requestedMode.includes("roster") ||
+    requestedMode.includes("registry")
+  ) {
+    return true;
+  }
+
+  return detectDateColumns(columns).length >= 3 || columns.length > 8;
+}
+
+function attendanceCode(value: unknown) {
+  return lower(value).replace(/\./g, "");
+}
+
+function isPresentMark(value: unknown) {
+  const code = attendanceCode(value);
+  return ["p", "present", "yes", "y", "1", "✓", "✔", "attended"].includes(code);
+}
+
+function isAbsentMark(value: unknown) {
+  const code = attendanceCode(value);
+  return ["a", "absent", "no", "n", "0", "x", "✗", "✘", "missed"].includes(code);
+}
+
+function estimateColumnWidth(header: string, values: unknown[]) {
+  const longest = Math.max(
+    header.length,
+    ...values.map((value) => String(value ?? "").length)
+  );
+
+  return Math.min(Math.max(longest + 3, 12), 42);
+}
+
+function styleWorksheet(worksheet: any, headers: string[], rows: ExcelRow[]) {
+  worksheet.views = [{ state: "frozen", ySplit: 1 }];
+  worksheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: headers.length },
+  };
+
+  worksheet.columns = headers.map((header) => ({
+    header,
+    key: header,
+    width: estimateColumnWidth(header, rows.map((row) => row[header])),
+  }));
+
+  const headerRow = worksheet.getRow(1);
+  headerRow.height = 22;
+  headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  headerRow.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF111827" },
+  };
+  headerRow.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+
+  headerRow.eachCell((cell: any) => {
+    cell.border = {
+      top: { style: "thin", color: { argb: "FFCBD5E1" } },
+      left: { style: "thin", color: { argb: "FFCBD5E1" } },
+      bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+      right: { style: "thin", color: { argb: "FFCBD5E1" } },
+    };
+  });
+
+  worksheet.eachRow((row: any, rowNumber: number) => {
+    if (rowNumber === 1) return;
+
+    row.alignment = { vertical: "top", wrapText: true };
+    row.eachCell((cell: any) => {
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE5E7EB" } },
+        left: { style: "thin", color: { argb: "FFE5E7EB" } },
+        bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+        right: { style: "thin", color: { argb: "FFE5E7EB" } },
+      };
+    });
+  });
+}
+
+function appendRows(worksheet: any, headers: string[], rows: ExcelRow[]) {
+  worksheet.columns = headers.map((header) => ({
+    header,
+    key: header,
+    width: estimateColumnWidth(header, rows.map((row) => row[header])),
+  }));
+
+  for (const row of rows) {
+    const output: ExcelRow = {};
+    for (const header of headers) {
+      output[header] = valueToCell(row[header]);
+    }
+    worksheet.addRow(output);
+  }
+
+  styleWorksheet(worksheet, headers, rows);
+}
+
+function makeDataRows(columns: string[], rows: ExcelRow[]) {
+  return rows.map((row, index) => {
+    const output: ExcelRow = { "S/N": index + 1 };
+    for (const column of columns) {
+      output[column] = row[column] ?? "";
+    }
+    return output;
+  });
+}
+
+function appendDataSheet(workbook: any, columns: string[], rows: ExcelRow[]) {
+  const dataRows = makeDataRows(columns, rows);
+  const headers = ["S/N", ...columns];
+  const sheet = workbook.addWorksheet("Data");
+  appendRows(sheet, headers, dataRows);
+}
+
+function appendRegistrySheet(workbook: any, columns: string[], rows: ExcelRow[]) {
+  const nameColumn = findColumn(columns, ["name", "full name", "member", "student"]);
+  const phoneColumn = findColumn(columns, ["phone", "mobile", "tel"]);
+  const roleColumn = findColumn(columns, ["role", "group", "team", "class", "department"]);
+
+  const registryRows = rows.map((row, index) => ({
+    "S/N": index + 1,
+    "Full Name": nameColumn ? row[nameColumn] ?? "" : "",
+    "Phone Number": phoneColumn ? row[phoneColumn] ?? "" : "",
+    "Group/Role": roleColumn ? row[roleColumn] ?? "" : "",
+    "Source Row": index + 2,
+    Notes: "",
+  }));
+
+  const headers = ["S/N", "Full Name", "Phone Number", "Group/Role", "Source Row", "Notes"];
+  const sheet = workbook.addWorksheet("Registry");
+  appendRows(sheet, headers, registryRows);
+}
+
+function appendAttendanceMatrixSheet(
+  workbook: any,
+  columns: string[],
+  rows: ExcelRow[]
+): AttendanceSummary | null {
+  const dateColumns = detectDateColumns(columns);
+  if (dateColumns.length === 0) return null;
+
+  const nameColumn = findColumn(columns, ["name", "full name", "member", "student"]);
+  const phoneColumn = findColumn(columns, ["phone", "mobile", "tel"]);
+
+  const matrixRows = rows.map((row, index) => {
+    let present = 0;
+    let absent = 0;
+    let blank = 0;
+
+    const output: ExcelRow = {
+      "S/N": index + 1,
+      "Full Name": nameColumn ? row[nameColumn] ?? "" : "",
+      "Phone Number": phoneColumn ? row[phoneColumn] ?? "" : "",
+    };
+
+    for (const column of dateColumns) {
+      const value = row[column] ?? "";
+      output[column] = value;
+
+      if (isPresentMark(value)) present += 1;
+      else if (isAbsentMark(value)) absent += 1;
+      else blank += 1;
+    }
+
+    const marked = present + absent;
+    output["Present Count"] = present;
+    output["Absent Count"] = absent;
+    output["Blank Count"] = blank;
+    output["Marked Days"] = marked;
+    output["Attendance %"] =
+      dateColumns.length > 0 ? Number(((present / dateColumns.length) * 100).toFixed(2)) : 0;
+
+    return output;
+  });
+
+  const headers = [
+    "S/N",
+    "Full Name",
+    "Phone Number",
+    ...dateColumns,
+    "Present Count",
+    "Absent Count",
+    "Blank Count",
+    "Marked Days",
+    "Attendance %",
+  ];
+
+  const sheet = workbook.addWorksheet("Attendance Matrix");
+  appendRows(sheet, headers, matrixRows);
+
+  const attendanceColumnIndex = headers.indexOf("Attendance %") + 1;
+  if (attendanceColumnIndex > 0) {
+    for (let rowIndex = 2; rowIndex <= matrixRows.length + 1; rowIndex += 1) {
+      const cell = sheet.getCell(rowIndex, attendanceColumnIndex);
+      cell.numFmt = "0.00";
+    }
+  }
+
+  const totals = matrixRows.reduce<{
+    present: number;
+    absent: number;
+    blank: number;
+    marked: number;
+  }>(
+    (acc, row) => {
+      acc.present += Number(row["Present Count"] || 0);
+      acc.absent += Number(row["Absent Count"] || 0);
+      acc.blank += Number(row["Blank Count"] || 0);
+      acc.marked += Number(row["Marked Days"] || 0);
+      return acc;
+    },
+    { present: 0, absent: 0, blank: 0, marked: 0 }
+  );
+
+  const denominator = rows.length * dateColumns.length;
+  const overallAttendancePercent =
+    denominator > 0 ? Number(((totals.present / denominator) * 100).toFixed(2)) : 0;
+
+  return {
+    sheetName: "Attendance Matrix",
+    dateColumnCount: dateColumns.length,
+    totalPresent: totals.present,
+    totalAbsent: totals.absent,
+    totalBlank: totals.blank,
+    totalMarked: totals.marked,
+    overallAttendancePercent,
+  };
+}
+
+function appendDataQualitySheet(workbook: any, columns: string[], rows: ExcelRow[]) {
+  const nameColumn = findColumn(columns, ["name", "full name", "member", "student"]);
+  const phoneColumn = findColumn(columns, ["phone", "mobile", "tel"]);
+
+  const issues: ExcelRow[] = [];
+  const seenPhones = new Map<string, number>();
+
+  rows.forEach((row, index) => {
+    if (nameColumn && !String(row[nameColumn] ?? "").trim()) {
+      issues.push({
+        "Issue Type": "Missing name",
+        "Source Row": index + 2,
+        Detail: `Missing value in ${nameColumn}`,
+      });
+    }
+
+    if (phoneColumn) {
+      const phone = String(row[phoneColumn] ?? "").trim();
+      if (!phone) {
+        issues.push({
+          "Issue Type": "Missing phone",
+          "Source Row": index + 2,
+          Detail: `Missing value in ${phoneColumn}`,
+        });
+      } else if (seenPhones.has(phone)) {
+        issues.push({
+          "Issue Type": "Duplicate phone",
+          "Source Row": index + 2,
+          Detail: `Also appears on source row ${seenPhones.get(phone)}`,
+        });
+      } else {
+        seenPhones.set(phone, index + 2);
+      }
+    }
+  });
+
+  const finalIssues =
+    issues.length > 0
+      ? issues
+      : [
+          {
+            "Issue Type": "No major issue detected",
+            "Source Row": "",
+            Detail:
+              "Nexus did not detect obvious missing names, missing phone values, or duplicate phones.",
+          },
+        ];
+
+  const headers = ["Issue Type", "Source Row", "Detail"];
+  const sheet = workbook.addWorksheet("Data Quality");
+  appendRows(sheet, headers, finalIssues);
+}
+
+function appendSummarySheet(
+  workbook: any,
+  title: string,
+  workbookMode: string,
+  columns: string[],
+  rows: ExcelRow[],
+  sheets: string[],
+  attendanceSummary?: AttendanceSummary | null
+) {
+  const summaryRows: Array<[string, unknown]> = [
+    ["Title", title],
+    ["Generated by", "RioMind Nexus"],
+    ["Workbook mode", workbookMode],
+    ["Total records", rows.length],
+    ["Total columns", columns.length],
+    ["Sheets", [...sheets, "Summary"].join(", ")],
+    ["Columns", columns.join(", ")],
+  ];
+
+  if (attendanceSummary) {
+    summaryRows.push(
+      ["", ""],
+      ["Attendance date columns", attendanceSummary.dateColumnCount],
+      ["Total present marks", attendanceSummary.totalPresent],
+      ["Total absent marks", attendanceSummary.totalAbsent],
+      ["Total blank marks", attendanceSummary.totalBlank],
+      ["Total marked days", attendanceSummary.totalMarked],
+      ["Overall attendance %", attendanceSummary.overallAttendancePercent]
+    );
+  }
+
+  const sheet = workbook.addWorksheet("Summary");
+  sheet.columns = [
+    { header: "Metric", key: "Metric", width: 28 },
+    { header: "Value", key: "Value", width: 80 },
+  ];
+
+  for (const [metric, value] of summaryRows) {
+    sheet.addRow({ Metric: metric, Value: value });
+  }
+
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+  sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  sheet.getRow(1).fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF0F172A" },
+  };
+
+  sheet.eachRow((row: any, rowNumber: number) => {
+    row.alignment = { vertical: "top", wrapText: true };
+
+    if (rowNumber > 1 && row.getCell(1).value) {
+      row.getCell(1).font = { bold: true };
+    }
+
+    row.eachCell((cell: any) => {
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE5E7EB" } },
+        left: { style: "thin", color: { argb: "FFE5E7EB" } },
+        bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+        right: { style: "thin", color: { argb: "FFE5E7EB" } },
+      };
+    });
+  });
+}
+
+export async function createExcelArtifact(
+  input: CreateExcelArtifactInput
+): Promise<CreateExcelArtifactResult> {
+  const ExcelJSModule = await import("exceljs");
+  const ExcelJS = ((ExcelJSModule as unknown as { default?: any }).default ?? ExcelJSModule) as any;
+
+  const title = safeFileTitle(input.title);
+  const id = crypto.randomUUID();
+  const shortId = id.slice(0, 8);
+  const name = `${title}-${shortId}.xlsx`;
+
+  const preColumns = Array.isArray(input.columns)
+    ? input.columns.map((column) => String(column ?? "").trim()).filter(Boolean)
+    : undefined;
+
+  const rows = normalizeRows(input.rows, preColumns);
+  const columns = normalizeColumns(input.columns, rows);
+  const workbookMode = shouldUseComplexWorkbook(columns, input.mode) ? "complex_roster" : "standard";
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "RioMind Nexus";
+  workbook.lastModifiedBy = "RioMind Nexus";
+  workbook.created = new Date();
+  workbook.modified = new Date();
+
+  const sheets: string[] = [];
+
+  appendDataSheet(workbook, columns, rows);
+  sheets.push("Data");
+
+  let attendanceSummary: AttendanceSummary | null = null;
+
+  if (workbookMode === "complex_roster") {
+    appendRegistrySheet(workbook, columns, rows);
+    sheets.push("Registry");
+
+    attendanceSummary = appendAttendanceMatrixSheet(workbook, columns, rows);
+    if (attendanceSummary) sheets.push(attendanceSummary.sheetName);
+
+    appendDataQualitySheet(workbook, columns, rows);
+    sheets.push("Data Quality");
+  } else {
+    appendDataQualitySheet(workbook, columns, rows);
+    sheets.push("Data Quality");
+  }
+
+  appendSummarySheet(workbook, title, workbookMode, columns, rows, sheets, attendanceSummary);
+  sheets.push("Summary");
+
+  const ownerKey = normalizeOwnerKey(input.ownerKey);
+  const uploadRoot = process.env.RIOMIND_UPLOAD_DIR || "/app/.riomind_uploads";
+  const artifactDir = path.join(uploadRoot, ownerKey, "artifacts");
+  await fs.mkdir(artifactDir, { recursive: true });
+
+  const filePath = path.join(artifactDir, name);
+  const buffer = await workbook.xlsx.writeBuffer();
+  await fs.writeFile(filePath, Buffer.from(buffer));
+
+  return {
+    id,
+    type: "excel",
+    name,
+    title,
+    path: filePath,
+    downloadUrl: `/api/riomind/artifacts/download?name=${encodeURIComponent(name)}`,
+    rowCount: rows.length,
+    columnCount: columns.length,
+    sheets,
+  };
+}

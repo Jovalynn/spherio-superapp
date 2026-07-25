@@ -1,0 +1,163 @@
+import { getRioMindPgPool } from "@/lib/riomind/db";
+
+export type RioMindArtifactRecord = {
+  id: string;
+  ownerKey: string;
+  type: string;
+  name: string;
+  title: string | null;
+  path: string;
+  downloadUrl: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+type RegisterArtifactInput = {
+  ownerKey: string;
+  artifact: {
+    id: string;
+    type: string;
+    name: string;
+    title?: string;
+    path: string;
+    downloadUrl: string;
+    rowCount?: number;
+    columnCount?: number;
+    sheets?: string[];
+    pageCount?: number;
+    paragraphCount?: number;
+    tableCount?: number;
+    sectionCount?: number;
+    slideCount?: number;
+  };
+};
+
+let ensured = false;
+
+function normalizeOwnerKey(value: string) {
+  return String(value || "local_dev")
+    .replace(/[^a-zA-Z0-9_.-]/g, "_")
+    .slice(0, 120) || "local_dev";
+}
+
+export async function ensureRioMindArtifactsTable() {
+  // The registry table is created through the first successful deployment/test.
+  // Do not run CREATE TABLE / CREATE INDEX inside hot API requests.
+  // This prevents request-time DDL locks from hanging Nexus.
+  ensured = true;
+}
+
+export async function registerRioMindArtifact(input: RegisterArtifactInput) {
+  await ensureRioMindArtifactsTable();
+
+  const db = getRioMindPgPool();
+  const artifact = input.artifact;
+  const ownerKey = normalizeOwnerKey(input.ownerKey);
+
+  const metadata = {
+    rowCount: artifact.rowCount ?? null,
+    columnCount: artifact.columnCount ?? null,
+    sheets: artifact.sheets ?? null,
+    pageCount: artifact.pageCount ?? null,
+    paragraphCount: artifact.paragraphCount ?? null,
+    tableCount: artifact.tableCount ?? null,
+    sectionCount: artifact.sectionCount ?? null,
+    slideCount: artifact.slideCount ?? null,
+  };
+
+  await db.query(
+    `
+      INSERT INTO riomind_artifacts (
+        id,
+        owner_key,
+        type,
+        name,
+        title,
+        file_path,
+        download_url,
+        metadata
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+      ON CONFLICT (id) DO UPDATE SET
+        owner_key = EXCLUDED.owner_key,
+        type = EXCLUDED.type,
+        name = EXCLUDED.name,
+        title = EXCLUDED.title,
+        file_path = EXCLUDED.file_path,
+        download_url = EXCLUDED.download_url,
+        metadata = EXCLUDED.metadata
+    `,
+    [
+      artifact.id,
+      ownerKey,
+      artifact.type,
+      artifact.name,
+      artifact.title ?? null,
+      artifact.path,
+      artifact.downloadUrl,
+      JSON.stringify(metadata),
+    ]
+  );
+}
+
+export async function listRioMindArtifacts(input: {
+  ownerKey: string;
+  type?: string | null;
+  search?: string | null;
+  limit?: number;
+}) {
+  await ensureRioMindArtifactsTable();
+
+  const db = getRioMindPgPool();
+  const ownerKey = normalizeOwnerKey(input.ownerKey);
+  const limit = Math.min(Math.max(Number(input.limit || 50), 1), 100);
+  const type = input.type?.trim().toLowerCase() || null;
+  const search = input.search?.trim() || null;
+
+  const params: unknown[] = [ownerKey];
+  const where = ["owner_key = $1"];
+
+  if (type && type !== "all") {
+    params.push(type);
+    where.push(`LOWER(type) = $${params.length}`);
+  }
+
+  if (search) {
+    params.push(`%${search}%`);
+    where.push(`(name ILIKE $${params.length} OR title ILIKE $${params.length})`);
+  }
+
+  params.push(limit);
+
+  const result = await db.query(
+    `
+      SELECT
+        id,
+        owner_key,
+        type,
+        name,
+        title,
+        file_path,
+        download_url,
+        metadata,
+        created_at
+      FROM riomind_artifacts
+      WHERE ${where.join(" AND ")}
+      ORDER BY created_at DESC
+      LIMIT $${params.length}
+    `,
+    params
+  );
+
+  return result.rows.map((row): RioMindArtifactRecord => ({
+    id: row.id,
+    ownerKey: row.owner_key,
+    type: row.type,
+    name: row.name,
+    title: row.title,
+    path: row.file_path,
+    downloadUrl: row.download_url,
+    metadata: row.metadata ?? {},
+    createdAt: row.created_at,
+  }));
+}

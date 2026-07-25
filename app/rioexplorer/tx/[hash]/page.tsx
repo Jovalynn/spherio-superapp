@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import CopyableValue from "@/components/rioexplorer/CopyableValue";
 import { use, useEffect, useMemo, useState } from "react";
 
 function shellClass() {
@@ -292,13 +293,13 @@ export default function RioExplorerTxDetailPage({
                     key={`${row.tx_hash}-${idx}`}
                     className="grid grid-cols-[0.7fr_0.95fr_0.95fr_1fr_1fr_0.9fr_0.75fr] gap-4 px-6 py-4 text-sm text-white/80"
                   >
-                    <div className="font-semibold text-white">{row.height}</div>
+                    <div className="font-semibold text-white"><CopyableValue value={String(row.height)} left={10} right={0} mono={false} label="Copy block height" /></div>
                     <div>{formatDateTime(row.time)}</div>
                     <div>{row.source_module}</div>
-                    <div>{row.activity_type}</div>
-                    <div title={row.subject_asset || ""}>{shortHash(row.subject_asset)}</div>
-                    <div title={row.counterparty || ""}>{shortHash(row.counterparty)}</div>
-                    <div>{row.amount || "—"}</div>
+                    <div><CopyableValue value={row.activity_type} left={12} right={0} mono={false} label="Copy action" /></div>
+                    <div title={row.subject_asset || ""}><CopyableValue value={row.subject_asset} left={10} right={8} label="Copy subject" /></div>
+                    <div title={row.counterparty || ""}><CopyableValue value={row.counterparty} left={10} right={8} label="Copy counterparty" /></div>
+                    <div><CopyableValue value={row.amount ? String(row.amount) : ""} left={12} right={8} label="Copy amount" /></div>
                   </div>
                 ))}
               </div>

@@ -482,8 +482,13 @@ const showMarkerLabels = data.length <= 24 && rangeLabel !== "all";
 
           const minVisualBodyHeight =
             rangeLabel === "all" || rangeLabel === "2y" || rangeLabel === "1y"
+              ? 16
+              : 22;
+
+          const minVisualWickExtension =
+            rangeLabel === "all" || rangeLabel === "2y" || rangeLabel === "1y"
               ? 8
-              : 6;
+              : 12;
 
           const rawTop = Math.min(yOpen, yClose);
           const rawBottom = Math.max(yOpen, yClose);
@@ -510,12 +515,20 @@ const showMarkerLabels = data.length <= 24 && rangeLabel !== "all";
           );
 
           const wickTop = isSinglePrint
-            ? clamp(bodyY - 4, margin.top, margin.top + innerHeight)
-            : wickTopBase;
+            ? clamp(bodyY - minVisualWickExtension, margin.top, margin.top + innerHeight)
+            : clamp(
+                Math.min(wickTopBase, bodyY - minVisualWickExtension / 2),
+                margin.top,
+                margin.top + innerHeight,
+              );
 
           const wickBottom = isSinglePrint
-            ? clamp(bodyY + bodyHeight + 4, margin.top, margin.top + innerHeight)
-            : wickBottomBase;
+            ? clamp(bodyY + bodyHeight + minVisualWickExtension, margin.top, margin.top + innerHeight)
+            : clamp(
+                Math.max(wickBottomBase, bodyY + bodyHeight + minVisualWickExtension / 2),
+                margin.top,
+                margin.top + innerHeight,
+              );
 
           if (mode === "ohlc") {
             return (

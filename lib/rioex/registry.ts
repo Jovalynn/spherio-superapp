@@ -505,11 +505,11 @@ async function readPairRegistryTable(pool: Pool) {
 function buildRoutes(pairAddress: string) {
   return {
     assetTerminal: `/rioex/markets/${encodeURIComponent(pairAddress)}`,
-    marketBoard: "/rioex/markets",
+    marketBoard: "/rioex",
     hero: "/rioex",
-    pool: `/riodex/pool/${encodeURIComponent(pairAddress)}`,
+    pool: `/riodex/pools?pool=${encodeURIComponent(pairAddress)}`,
     swap: `/riodex/swap?pair=${encodeURIComponent(pairAddress)}`,
-    liquidity: `/riodex/liquidity?pool=${encodeURIComponent(pairAddress)}`,
+    liquidity: `/riodex/liquidity/action?pool=${encodeURIComponent(pairAddress)}&mode=add&source=rioex`,
   };
 }
 

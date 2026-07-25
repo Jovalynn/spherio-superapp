@@ -28,10 +28,15 @@ type NavItem = {
   disabled?: boolean;
 };
 
-function formatMoney(value?: number | null) {
+function formatMoney(value?: number | null, unknownLabel = "USD pending") {
+  if (value === null || value === undefined) return unknownLabel;
+
+  const n = Number(value);
+  if (!Number.isFinite(n)) return unknownLabel;
+
   return `$${new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 0,
-  }).format(Number.isFinite(Number(value ?? 0)) ? Number(value ?? 0) : 0)}`;
+  }).format(n)}`;
 }
 
 function shellClass() {
@@ -100,22 +105,17 @@ function normalizeFeaturedDisplay(featured?: ExchangeSurfaceNavFeatured | null) 
   if (!featured) return "—";
 
   const raw = String(featured.displaySymbol || "").trim();
-  if (raw && raw.toLowerCase() !== "urio") return raw;
+  if (raw) return raw;
 
-  const base = String(featured.baseSymbol || "").trim() || "RIO";
-  let quote = String(featured.quoteSymbol || "").trim() || "RUSD";
-
-  if (quote.toLowerCase().startsWith("rio14nur")) {
-    quote = "RUSD";
-  }
-
+  const base = String(featured.baseSymbol || "").trim();
+  const quote = String(featured.quoteSymbol || "").trim();
   if (base && quote) return `${base} / ${quote}`;
 
   if (featured.canonicalSymbol?.trim()) {
     return featured.canonicalSymbol.replace("/", " / ");
   }
 
-  return raw || "—";
+  return "—";
 }
 
 export default function ExchangeSurfaceNav({
@@ -146,7 +146,7 @@ export default function ExchangeSurfaceNav({
   title: string;
   subtitle: string;
 }) {
-  const marketBoard = featured?.routes?.marketBoard || "/rioex/markets";
+  const marketBoard = featured?.routes?.marketBoard || "/rioex";
   const assetTerminal = featured?.routes?.assetTerminal || marketBoard;
   const tradeRoute =
     featured?.routes?.trade ||
@@ -154,19 +154,19 @@ export default function ExchangeSurfaceNav({
       ? `${assetTerminal}/trades`
       : assetTerminal);
   const swapRoute = featured?.routes?.swap || "/riodex/swap";
-  const poolRoute = featured?.routes?.pool || "/riodex/pool";
-  const liquidityRoute = featured?.routes?.liquidity || "/riodex/liquidity";
+  const poolRoute = featured?.routes?.pool || "/riodex/pools";
+  const liquidityRoute = featured?.routes?.liquidity || "/riodex/pools";
   const featuredDisplay = normalizeFeaturedDisplay(featured);
 
   const navItems: NavItem[] = [
     { key: "overview", label: "Overview", href: product === "riodex" ? "/riodex" : "/rioex" },
     { key: "assets", label: "Assets", href: "/rioex/assets" },
-    { key: "markets", label: "Markets", href: "/rioex/markets" },
+    { key: "markets", label: "Markets", href: "/rioex" },
     { key: "trades", label: "Trades", href: tradeRoute },
     { key: "swap", label: "Swap", href: swapRoute },
     { key: "pool", label: "Pool", href: poolRoute },
     { key: "liquidity", label: "Liquidity", href: liquidityRoute },
-    { key: "screener", label: "Screener", href: "/riodex/markets" },
+    { key: "screener", label: "Screener", href: "/rioex" },
     { key: "launchpad", label: "LaunchPad", href: "/launch" },
     { key: "rio", label: "RIO", href: "/terminals/rio" },
     { key: "rusd", label: "RUSD", href: "/terminals/rusd" },
@@ -208,7 +208,7 @@ export default function ExchangeSurfaceNav({
           <div className="rounded-[22px] border border-cyan-400/16 bg-[#162451] px-5 py-5">
             <div className="text-[13px] text-sky-200/90">Registry TVL</div>
             <div className="mt-4 text-2xl font-semibold text-white">
-              {formatMoney(featured?.liquidityUsd || 0)}
+              {formatMoney(featured?.liquidityUsd)}
             </div>
           </div>
         </div>

@@ -1,0 +1,41 @@
+export const RIOMIND_CORE_CAPABILITIES = [
+  "prime_ai",
+  "rioexplorer",
+  "rioex",
+  "riolight",
+  "spo20",
+  "staking",
+  "validators",
+  "governance",
+  "treasury",
+  "rio",
+  "rusd",
+  "bridge",
+  "markets",
+  "liquidity",
+  "pools",
+  "launchpad",
+  "create_token",
+  "advance_launch",
+  "cross_chain",
+  "analytics",
+  "monitoring",
+
+  "nexus_chat",
+  "code_workspace",
+  "repository_analyzer",
+  "terminal_assistant",
+  "artifact_generation",
+  "document_editor",
+  "image_generation",
+  "image_analysis",
+  "multimodal_reasoning",
+  "project_builder",
+  "app_builder",
+  "mobile_app_workspace",
+  "android_studio_workspace",
+  "deployment_assistant"
+] as const;
+
+export type RioMindCapability =
+  (typeof RIOMIND_CORE_CAPABILITIES)[number];

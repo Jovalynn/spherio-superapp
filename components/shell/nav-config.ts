@@ -14,10 +14,10 @@ const RIODEX_TERMINAL_ROUTE = buildRioDexSurfaceHref(
 export const TOP_NAV = [
   { key: "overview", label: "Overview", href: "/overview" },
   { key: "launch", label: "Launch", href: "/createtoken" },
+  { key: "markets", label: "Markets", href: RIODEX_HOME_ROUTE },
   { key: "terminals", label: "Terminals", href: "/rio" },
-  { key: "riodex", label: "RioDex", href: RIODEX_HOME_ROUTE },
-  { key: "rioex", label: "RioEx", href: "/rioex" },
-  { key: "rioexplorer", label: "RioExplorer", href: "/rioexplorer" },
+  { key: "explorer", label: "Explorer", href: "/rioexplorer" },
+  { key: "wallet", label: "Wallet", href: "/riolight" },
   { key: "utilities", label: "Utilities", href: "/utilities" },
 ] as const;
 
@@ -41,26 +41,20 @@ export const SECTION_NAV_MAP = {
     { label: "RIO", href: "/rio", icon: "RioLogo" },
     { label: "RUSD", href: "/rusd", icon: "RusdLogo" },
   ],
-  riodex: [
-    { label: "Home", href: RIODEX_HOME_ROUTE, icon: "House" },
-    { label: "Screener", href: RIODEX_SCREENER_ROUTE, icon: "ChartNoAxesCombined" },
+  markets: [
+    { label: "RioDex Home", href: RIODEX_HOME_ROUTE, icon: "House" },
     { label: "Swap", href: RIODEX_SWAP_ROUTE, icon: "ArrowLeftRight" },
     { label: "Liquidity", href: RIODEX_LIQUIDITY_ROUTE, icon: "Droplets" },
     { label: "Pools", href: RIODEX_POOLS_ROUTE, icon: "Boxes" },
+    { label: "Screener", href: RIODEX_SCREENER_ROUTE, icon: "ChartNoAxesCombined" },
+    { label: "RioEx", href: "/rioex", icon: "Store" },
     {
-      label: "Terminal",
+      label: "Trade Terminal",
       href: RIODEX_TERMINAL_ROUTE,
       icon: "CandlestickChart",
     },
   ],
-  rioex: [
-    { label: "Overview", href: "/rioex", icon: "Store" },
-    { label: "Markets", href: "/rioex", icon: "BarChart3" },
-    { label: "Pairs", href: RIODEX_POOLS_ROUTE, icon: "Boxes" },
-    { label: "Screener", href: RIODEX_SCREENER_ROUTE, icon: "CandlestickChart" },
-    { label: "Discovery", href: "/rioex", icon: "Compass" },
-  ],
-  rioexplorer: [
+  explorer: [
     { label: "Overview", href: "/rioexplorer", icon: "Compass" },
     { label: "Blocks", href: "/rioexplorer#blocks", icon: "Boxes" },
     { label: "Transactions", href: "/rioexplorer#transactions", icon: "Receipt" },
@@ -68,6 +62,13 @@ export const SECTION_NAV_MAP = {
     { label: "SPO-20", href: "/rioexplorer/spo20", icon: "Library" },
     { label: "Contracts", href: "/rioexplorer#contracts", icon: "FileCode2" },
     { label: "Markets", href: RIODEX_SCREENER_ROUTE, icon: "BarChart3" },
+  ],
+  wallet: [
+    { label: "RioLight Portfolio", href: "/riolight", icon: "Wallet" },
+    { label: "Assets", href: "/riolight", icon: "Library" },
+    { label: "Pump Positions", href: "/riolight", icon: "Flame" },
+    { label: "Prime Allocations", href: "/riolight", icon: "Shield", badge: "Next" },
+    { label: "SPO-20 Balances", href: "/riolight", icon: "Coins" },
   ],
   utilities: [
     { label: "RioPay", href: "/utilities#riopay", icon: "Wallet" },
@@ -78,9 +79,9 @@ export const SECTION_NAV_MAP = {
 } as const;
 
 export function getActiveSection(pathname: string) {
-  if (pathname.startsWith("/riodex")) return "riodex";
-  if (pathname.startsWith("/rioexplorer")) return "rioexplorer";
-  if (pathname.startsWith("/rioex")) return "rioex";
+  if (pathname.startsWith("/riolight") || pathname.startsWith("/wallet")) return "wallet";
+  if (pathname.startsWith("/riodex") || pathname.startsWith("/rioex")) return "markets";
+  if (pathname.startsWith("/rioexplorer")) return "explorer";
   if (pathname.startsWith("/rio") || pathname.startsWith("/rusd")) return "terminals";
   if (
     pathname.startsWith("/createtoken") ||

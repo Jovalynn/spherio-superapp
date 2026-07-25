@@ -8,6 +8,8 @@ type WalletModalProps = {
   setOpen: (open: boolean) => void;
 };
 
+const FUTURE_ROUTE_LAYERS = ["IBC", "Axelar", "Hyperlane", "WalletConnect", "EVM"];
+
 function shortAddr(v?: string | null, left = 10, right = 8) {
   if (!v) return "—";
   if (v.length <= left + right) return v;
@@ -26,7 +28,7 @@ export default function WalletModal({ isOpen, setOpen }: WalletModalProps) {
 
   if (!isOpen) return null;
 
-  async function handleOpenWalletSelector() {
+  async function handleOpenCosmosKitSelector() {
     try {
       await openView();
     } catch (e) {
@@ -42,31 +44,74 @@ export default function WalletModal({ isOpen, setOpen }: WalletModalProps) {
     }
   }
 
+  function openRioLightAccess() {
+    window.location.href = "/riolight";
+  }
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-neutral-950/95 ring-1 ring-white/10 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl overflow-hidden rounded-[28px] bg-neutral-950/95 ring-1 ring-white/10 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
           <div>
-            <div className="text-base font-semibold text-white">Connect wallet</div>
-            <div className="text-xs text-white/60">Spherio (spherio-1)</div>
+            <div className="text-lg font-semibold text-white">Connect RioLight</div>
+            <div className="mt-1 text-xs uppercase tracking-[0.22em] text-white/45">
+              Spherio wallet access · spherio-1
+            </div>
           </div>
+
           <button
-            className="rounded-lg px-3 py-1 text-sm text-white/80 hover:bg-white/10 hover:text-white"
+            className="rounded-xl px-3 py-1.5 text-sm text-white/80 hover:bg-white/10 hover:text-white"
             onClick={() => setOpen(false)}
           >
             Close
           </button>
         </div>
 
-        <div className="space-y-3 px-5 py-4">
+        <div className="space-y-4 px-6 py-5">
+          <div className="rounded-2xl border border-cyan-300/20 bg-cyan-500/10 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-100/70">
+                  Primary wallet
+                </div>
+                <div className="mt-2 text-xl font-semibold text-white">
+                  RioLight
+                </div>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-white/68">
+                  Native Spherio wallet layer for RIO, RUSD, SPO-20 assets,
+                  Pump.live, Prime, RioDex approvals, and future signing flows.
+                </p>
+              </div>
+
+              <span className="rounded-full border border-cyan-300/25 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-100">
+                Recommended
+              </span>
+            </div>
+
+            <button
+              type="button"
+              className="mt-4 w-full rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-black text-slate-950 hover:bg-cyan-300"
+              onClick={openRioLightAccess}
+            >
+              Open RioLight Access
+            </button>
+
+            <p className="mt-3 text-xs leading-5 text-white/50">
+              RioLight wallet actions happen inside the extension. This app
+              displays connected portfolio state and execution surfaces.
+            </p>
+          </div>
+
           <div className="text-sm text-white/70">
             Status: <span className="text-white">{String(status ?? "")}</span>
           </div>
 
           {address ? (
-            <div className="rounded-xl bg-white/5 p-4 ring-1 ring-white/10">
-              <div className="text-xs text-white/60">Connected wallet</div>
-              <div className="mt-1 text-sm font-medium text-white">
+            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
+              <div className="text-xs uppercase tracking-[0.18em] text-white/45">
+                Connected external adapter
+              </div>
+              <div className="mt-2 text-sm font-semibold text-white">
                 {wallet?.prettyName || wallet?.name || "Wallet"}
               </div>
               <div className="mt-2 break-all text-sm text-white">{String(address)}</div>
@@ -76,13 +121,13 @@ export default function WalletModal({ isOpen, setOpen }: WalletModalProps) {
 
               <div className="mt-4 grid gap-2">
                 <button
-                  className="w-full rounded-xl bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/15"
+                  className="w-full rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15"
                   onClick={() => setOpen(false)}
                 >
                   Continue
                 </button>
                 <button
-                  className="w-full rounded-xl bg-[#7a1635] px-4 py-2 text-sm text-white hover:bg-[#8f1c40]"
+                  className="w-full rounded-xl bg-[#7a1635] px-4 py-2 text-sm font-semibold text-white hover:bg-[#8f1c40]"
                   onClick={handleDisconnect}
                 >
                   Disconnect
@@ -91,25 +136,58 @@ export default function WalletModal({ isOpen, setOpen }: WalletModalProps) {
             </div>
           ) : (
             <div className="space-y-3">
-              <button
-                className="w-full rounded-xl bg-white/5 px-4 py-3 text-left text-white ring-1 ring-white/10 hover:bg-white/10"
-                onClick={handleOpenWalletSelector}
-              >
-                <div className="text-sm font-medium">Open wallet selector</div>
-                <div className="text-xs text-white/60">
-                  Use CosmosKit to choose Keplr, Leap, or Cosmostation
+              <div className="rounded-2xl bg-white/[0.04] p-4 ring-1 ring-white/10">
+                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-white/45">
+                  External Cosmos wallets
                 </div>
-              </button>
+                <p className="mt-2 text-sm leading-6 text-white/62">
+                  Use CosmosKit for Keplr, Leap, or Cosmostation. Keplr desktop
+                  is the currently proven external adapter; Leap and Cosmostation
+                  remain available adapters to verify before production.
+                </p>
 
-              <div className="rounded-xl bg-white/5 p-4 text-sm text-white/70 ring-1 ring-white/10">
-                Make sure your wallet extension is installed, unlocked, and allowed for this browser profile.
+                <button
+                  type="button"
+                  className="mt-4 w-full rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold text-white ring-1 ring-white/10 hover:bg-white/15"
+                  onClick={handleOpenCosmosKitSelector}
+                >
+                  Open external wallet selector
+                </button>
+              </div>
+
+              <div className="rounded-2xl bg-white/[0.04] p-4 ring-1 ring-white/10">
+                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-white/45">
+                  Future route layers
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {FUTURE_ROUTE_LAYERS.map((layer) => (
+                    <span
+                      key={layer}
+                      className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-white/62"
+                    >
+                      {layer}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs leading-5 text-white/50">
+                  These are interoperability and route layers, not wallet
+                  replacements. They will surface progressively as bridge, IBC,
+                  and EVM access matures.
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-amber-500/10 p-4 text-sm leading-6 text-amber-100/80 ring-1 ring-amber-300/20">
+                RIO visibility in third-party wallets depends on SpherioChain
+                registry metadata, mobile wallet support, and market-data
+                integrations. Keplr desktop may show RIO before mobile wallets do.
               </div>
             </div>
           )}
         </div>
 
-        <div className="border-t border-white/10 px-5 py-4 text-xs text-white/50">
-          By connecting, you acknowledge Spherio does not custody funds and you verify chain details in your wallet.
+        <div className="border-t border-white/10 px-6 py-4 text-xs leading-5 text-white/50">
+          By connecting, you acknowledge Spherio does not custody funds. Verify
+          chain details, asset symbols, and transaction prompts inside your wallet.
         </div>
       </div>
     </div>

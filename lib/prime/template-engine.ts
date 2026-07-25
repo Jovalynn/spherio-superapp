@@ -168,6 +168,7 @@ export type PrimeCreateSuccess = {
   templateName: string;
   hybridLabel?: string;
   tokenAddress: string;
+  tokenPageUrl?: string;
   explorerUrl: string;
   screenerUrl: string;
   liquidityUrl: string;

@@ -4,6 +4,8 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
   Check,
+  Mic,
+  ArrowUp,
   Copy,
   Edit3,
   FileText,
@@ -237,6 +239,24 @@ function createTitle(input: string) {
 }
 
 async function readJson<T>(res: Response): Promise<T> {
+
+
+  function speakMessage(content: string) {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(
+      String(content || "").replace(/\s+/g, " ").trim()
+    );
+
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+
+    window.speechSynthesis.speak(utterance);
+  }
+
   return (await res.json()) as T;
 }
 
@@ -656,8 +676,320 @@ function NexusImageCardGrid({ cards }: { cards: NexusImageCard[] }) {
   );
 }
 
+
+function formatLiveUpdatedAgo(value: string) {
+  const parsed = Date.parse(value || "");
+  if (!Number.isFinite(parsed)) return "updated just now";
+
+  const seconds = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+
+  if (seconds < 10) return "updated just now";
+  if (seconds < 60) return `updated ${seconds}s ago`;
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `updated ${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+  return `updated ${hours}h ago`;
+}
+
+function parseLiveSourceAnswer(content: string) {
+  const text = String(content || "");
+
+  if (!text.includes("🟢 Live Web Sources")) return null;
+
+  const updated = text.match(/updated\s+([^\n]+)/i)?.[1]?.trim() || "";
+  const sourceCount = text.match(/Source count:\s*(\d+)/i)?.[1] || "";
+  const confidence = text.match(/Confidence:\s*([^\n]+)/i)?.[1]?.trim() || "";
+
+  const sources = [...text.matchAll(
+    /\d+\.\s+\*\*([\s\S]*?)\*\*\nSource:\s*([^\n]+)\n([\s\S]*?)\n(https?:\/\/[^\s]+)/g
+  )].slice(0, 8).map((match, index) => ({
+    index: index + 1,
+    title: match[1]?.replace(/\s+/g, " ").trim() || "Untitled source",
+    provider: match[2]?.trim() || "Source",
+    snippet: match[3]?.replace(/\s+/g, " ").trim() || "",
+    url: match[4]?.trim() || "",
+  }));
+
+  return {
+    updated,
+    sourceCount,
+    confidence,
+    sources,
+  };
+}
+
+function LiveSourceAnswerCard({ content }: { content: string }) {
+  const parsed = parseLiveSourceAnswer(content);
+
+  if (!parsed) return null;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/[0.08] px-3 py-1.5 text-xs font-black text-emerald-100">
+          <span className="h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,0.75)]" />
+          Live Web Sources
+        </span>
+
+        <span className="rounded-full border border-cyan-300/15 bg-cyan-500/[0.07] px-3 py-1.5 text-xs font-bold text-cyan-100/75">
+          {formatLiveUpdatedAgo(parsed.updated)}
+        </span>
+
+        {parsed.sourceCount ? (
+          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-bold text-white/60">
+            {parsed.sourceCount} sources
+          </span>
+        ) : null}
+
+        {parsed.confidence ? (
+          <span className="rounded-full border border-amber-300/20 bg-amber-400/[0.07] px-3 py-1.5 text-xs font-bold text-amber-100/75">
+            Confidence: {parsed.confidence}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="rounded-[22px] border border-cyan-300/12 bg-cyan-500/[0.035] p-4">
+        <div className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-cyan-100/45">
+          Current source-backed results
+        </div>
+
+        <div className="space-y-3">
+          {parsed.sources.map((source) => (
+            <a
+              key={`${source.index}-${source.url}`}
+              href={source.url}
+              target="_blank"
+              rel="noreferrer"
+              className="block rounded-2xl border border-white/10 bg-black/20 p-3 transition hover:border-cyan-300/25 hover:bg-cyan-500/[0.06]"
+            >
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-cyan-300/15 bg-cyan-500/[0.08] text-[11px] font-black text-cyan-100">
+                  {source.index}
+                </span>
+
+                <div className="min-w-0">
+                  <div className="text-sm font-black leading-5 text-cyan-50">
+                    {source.title}
+                  </div>
+                  <div className="mt-1 text-[10px] font-black uppercase tracking-[0.16em] text-cyan-100/42">
+                    {source.provider}
+                  </div>
+                  {source.snippet ? (
+                    <p className="mt-2 text-xs font-semibold leading-5 text-white/55">
+                      {source.snippet}
+                    </p>
+                  ) : null}
+                  <div className="mt-2 truncate text-xs font-semibold text-cyan-200/70">
+                    {source.url}
+                  </div>
+                </div>
+              </div>
+            </a>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+function parseMarkedSourceCards(content: string) {
+  const raw = String(content || "");
+  const blocks = raw.match(/SOURCE_CARD_START[\s\S]*?SOURCE_CARD_END/g) || [];
+
+  return blocks
+    .map((block, index) => ({
+      index: Number(block.match(/Index:\s*(\d+)/i)?.[1] || index + 1),
+      title: block.match(/Title:\s*([\s\S]*?)(?:\nTrust:|\nProvider:|\nSummary:|\nUrl:|SOURCE_CARD_END)/i)?.[1]?.trim() || "Untitled source",
+      trust: block.match(/Trust:\s*([^\n]+)/i)?.[1]?.trim() || "News Source",
+      provider: block.match(/Provider:\s*([^\n]+)/i)?.[1]?.trim() || "Source",
+      summary: block.match(/Summary:\s*([\s\S]*?)(?:\nUrl:|SOURCE_CARD_END)/i)?.[1]?.replace(/\s+/g, " ").trim() || "",
+      url: block.match(/Url:\s*(https?:\/\/[^\s]+)/i)?.[1]?.trim() || "",
+    }))
+    .filter((source) => source.url);
+}
+
+function stripMarkedSourceCards(content: string) {
+  return String(content || "")
+    .replace(/## Top Sources[\s\S]*?(?=\n## Confidence|\nSource count:|\nConfidence:|$)/i, "")
+    .replace(/SOURCE_CARD_START[\s\S]*?SOURCE_CARD_END/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function SourceCardsBlock({ content }: { content: string }) {
+  const cards = parseMarkedSourceCards(content);
+  if (!cards.length) return null;
+
+  return (
+    <div className="my-4 rounded-[22px] border border-cyan-300/12 bg-cyan-500/[0.035] p-4">
+      <div className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-cyan-100/45">
+        Top Sources
+      </div>
+
+      <div className="grid gap-3">
+        {cards.slice(0, 5).map((source) => (
+          <a
+            key={`${source.index}-${source.url}`}
+            href={source.url}
+            target="_blank"
+            rel="noreferrer"
+            className="group block rounded-2xl border border-white/10 bg-black/20 p-3 transition hover:border-cyan-300/28 hover:bg-cyan-500/[0.07]"
+          >
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-cyan-300/15 bg-cyan-500/[0.09] text-[11px] font-black text-cyan-100">
+                {source.index}
+              </span>
+
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-black leading-5 text-cyan-50">
+                  {source.title}
+                </div>
+
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-[0.16em] text-cyan-100/42">
+                    {source.provider}
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-black text-white/50">
+                    {source.trust}
+                  </span>
+                </div>
+
+                {source.summary ? (
+                  <p className="mt-2 text-xs font-semibold leading-5 text-white/55">
+                    {source.summary}
+                  </p>
+                ) : null}
+
+                <div className="mt-2 text-xs font-black text-cyan-200/75 transition group-hover:text-cyan-100">
+                  Open source ↗
+                </div>
+              </div>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+
+function cleanMessageForCopy(content: string) {
+  let output = String(content || "");
+
+  output = output.replace(/SOURCE_CARD_START\s*/g, "");
+  output = output.replace(/SOURCE_CARD_END\s*/g, "");
+
+  output = output.replace(/^Index:\s*(\d+)/gim, "$1.");
+  output = output.replace(/^Title:\s*/gim, "");
+  output = output.replace(/^Trust:\s*/gim, "Trust: ");
+  output = output.replace(/^Provider:\s*/gim, "Source: ");
+  output = output.replace(/^Summary:\s*/gim, "Summary: ");
+  output = output.replace(/^Url:\s*/gim, "Open: ");
+
+  output = output.replace(/\n{3,}/g, "\n\n").trim();
+
+  return output;
+}
+
+
+
+function extractLiveMetric(content: string, label: string) {
+  return String(content || "").match(new RegExp(`${label}:\\s*([^\\n]+)`, "i"))?.[1]?.trim() || "";
+}
+
+function parseFinalLiveSources(content: string) {
+  const raw = String(content || "");
+  const cards = (raw.match(/SOURCE_CARD_START[\s\S]*?SOURCE_CARD_END/g) || []).map((block, index) => ({
+    index: Number(block.match(/Index:\s*(\d+)/i)?.[1] || index + 1),
+    title: block.match(/Title:\s*([\s\S]*?)(?:\nTrust:|\nProvider:|\nSummary:|\nUrl:|SOURCE_CARD_END)/i)?.[1]?.trim() || "Untitled source",
+    trust: block.match(/Trust:\s*([^\n]+)/i)?.[1]?.trim() || "News Source",
+    provider: block.match(/Provider:\s*([^\n]+)/i)?.[1]?.trim() || "Source",
+    summary: block.match(/Summary:\s*([\s\S]*?)(?:\nUrl:|SOURCE_CARD_END)/i)?.[1]?.replace(/\s+/g, " ").trim() || "",
+    url: block.match(/Url:\s*(https?:\/\/[^\s]+)/i)?.[1]?.trim() || "",
+  })).filter((s) => s.url).slice(0, 5);
+
+  const section = (name: string, stops: string[]) => {
+    const stop = stops.map((s) => `## ${s}`).join("|");
+    return raw.match(new RegExp(`## ${name}\\s*([\\s\\S]*?)(?=\\n(?:${stop})|$)`, "i"))?.[1]?.trim() || "";
+  };
+
+  return {
+    updated: raw.match(/updated\s+([^\n]+)/i)?.[1]?.trim() || "",
+    queryTime: extractLiveMetric(raw, "Query time"),
+    responseTime: extractLiveMetric(raw, "Response time"),
+    thoughtDuration: extractLiveMetric(raw, "Thought duration"),
+    summary: section("Executive Summary", ["Key Findings", "Top Sources", "Confidence"]),
+    findings: section("Key Findings", ["Top Sources", "Confidence"]),
+    confidence: raw.match(/Score:\s*([^\n]+)/i)?.[1]?.trim() || raw.match(/Confidence:\s*([^\n]+)/i)?.[1]?.trim() || "",
+    confidenceReason: raw.match(/Confidence reason:\s*([\s\S]*?)$/i)?.[1]?.trim() || "",
+    cards,
+  };
+}
+
+function FinalLiveAnswerCard({ content }: { content: string }) {
+  const parsed = parseFinalLiveSources(content);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/[0.08] px-3 py-1.5 text-xs font-black text-emerald-100">● Live Web Sources</span>
+        <span className="rounded-full border border-cyan-300/15 bg-cyan-500/[0.07] px-3 py-1.5 text-xs font-bold text-cyan-100/75">{formatLiveUpdatedAgo(parsed.updated)}</span>
+        {parsed.thoughtDuration ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-bold text-white/60">Thought {parsed.thoughtDuration}</span> : null}
+        {parsed.confidence ? <span className="rounded-full border border-amber-300/20 bg-amber-400/[0.07] px-3 py-1.5 text-xs font-bold text-amber-100/75">Confidence {parsed.confidence}</span> : null}
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        {parsed.queryTime ? <div className="rounded-2xl border border-white/10 bg-black/20 p-3 text-xs text-white/55"><b className="text-cyan-100/70">Query time:</b> {new Date(parsed.queryTime).toLocaleTimeString()}</div> : null}
+        {parsed.responseTime ? <div className="rounded-2xl border border-white/10 bg-black/20 p-3 text-xs text-white/55"><b className="text-cyan-100/70">Response time:</b> {new Date(parsed.responseTime).toLocaleTimeString()}</div> : null}
+      </div>
+
+      {parsed.summary ? <section className="rounded-[22px] border border-cyan-300/12 bg-cyan-500/[0.035] p-4"><div className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-cyan-100/45">Executive Summary</div>{renderMessageContent(parsed.summary)}</section> : null}
+      {parsed.findings ? <section className="rounded-[22px] border border-white/10 bg-black/20 p-4"><div className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-cyan-100/45">Key Findings</div>{renderMessageContent(parsed.findings)}</section> : null}
+
+      <section className="rounded-[22px] border border-cyan-300/12 bg-cyan-500/[0.035] p-4">
+        <div className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-cyan-100/45">Top Sources</div>
+        <div className="grid gap-3">
+          {parsed.cards.map((source) => (
+            <a key={`${source.index}-${source.url}`} href={source.url} target="_blank" rel="noreferrer" className="block rounded-2xl border border-white/10 bg-black/20 p-3 transition hover:border-cyan-300/28">
+              <div className="text-sm font-black text-cyan-50">{source.index}. {source.title}</div>
+              <div className="mt-1 text-[10px] font-black uppercase tracking-[0.16em] text-cyan-100/42">{source.provider} · {source.trust}</div>
+              {source.summary ? <p className="mt-2 text-xs font-semibold leading-5 text-white/55">{source.summary}</p> : null}
+              <div className="mt-2 text-xs font-black text-cyan-200/75">Open source ↗</div>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      {parsed.confidenceReason ? <section className="rounded-[22px] border border-amber-300/12 bg-amber-400/[0.035] p-4"><div className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-amber-100/50">Confidence Reason</div>{renderMessageContent(parsed.confidenceReason)}</section> : null}
+    </div>
+  );
+}
+
+
 function renderMessageContent(content: string) {
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
+    if (String(content || "").includes("SOURCE_CARD_START")) {
+      return <FinalLiveAnswerCard content={content} />;
+    }
+
+    if (String(content || "").includes("SOURCE_CARD_START")) {
+      const cleaned = stripMarkedSourceCards(content);
+      return (
+        <div>
+          {cleaned ? renderMessageContent(cleaned) : null}
+          <SourceCardsBlock content={content} />
+        </div>
+      );
+    }
+
+    const liveSourceCard = parseLiveSourceAnswer(content);
+    if (liveSourceCard) return <LiveSourceAnswerCard content={content} />;
+
+    const lines = content.replace(/\r\n/g, "\n").split("\n");
   const blocks: React.ReactElement[] = [];
   let codeLines: string[] = [];
   let inCodeBlock = false;
@@ -888,6 +1220,20 @@ export default function RioMindChatPage() {
   const composerShellRef = useRef<HTMLFormElement | null>(null);
   const [composerClearancePx, setComposerClearancePx] = useState(280);
   const [loading, setLoading] = useState(false);
+  const [thinkingStartedAt, setThinkingStartedAt] = useState<number | null>(null);
+  const [thinkingSeconds, setThinkingSeconds] = useState("0.0");
+  useEffect(() => {
+    if (!loading || !thinkingStartedAt) {
+      setThinkingSeconds("0.0");
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setThinkingSeconds(String(Math.max(1, Math.floor((Date.now() - thinkingStartedAt) / 1000))));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [loading, thinkingStartedAt]);
+
+
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [feedbackByMessageId, setFeedbackByMessageId] = useState<
     Record<string, "like" | "dislike">
@@ -1848,11 +2194,25 @@ export default function RioMindChatPage() {
     setEditingMessageContent("");
   }
 
+
+  function readNexusMessageAloud(content: string) {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const cleaned = String(content || "").replace(/```[\s\S]*?```/g, " code block ").replace(/\s+/g, " ").trim();
+    if (!cleaned) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(cleaned);
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    window.speechSynthesis.speak(utterance);
+  }
+
   async function saveEditedUserMessage(messageId: string) {
     const edited = editingMessageContent.replace(/\s+/g, " ").trim();
 
     if (!activeConversationId || !edited || loading) return;
 
+    setThinkingStartedAt(Date.now());
     setLoading(true);
     setHistoryError(null);
 
@@ -1947,6 +2307,7 @@ export default function RioMindChatPage() {
       setHistoryError("Nexus could not edit and regenerate this message.");
     } finally {
       setLoading(false);
+      setThinkingStartedAt(null);
     }
   }
 
@@ -2012,6 +2373,7 @@ export default function RioMindChatPage() {
 
     setPreviewFile(null);
     setFileQuestion("");
+    setThinkingStartedAt(Date.now());
     setLoading(true);
     setHistoryError(null);
 
@@ -2070,6 +2432,7 @@ export default function RioMindChatPage() {
       setHistoryError("Nexus could not ask about this file.");
     } finally {
       setLoading(false);
+      setThinkingStartedAt(null);
     }
   }
 
@@ -2408,6 +2771,7 @@ NEXUS_ATTACHED_FILE_CONTEXT_END`
 
     if (!rawInput || loading) return;
 
+    setThinkingStartedAt(Date.now());
     setLoading(true);
     setMessage("");
     setHistoryError(null);
@@ -2474,6 +2838,7 @@ NEXUS_ATTACHED_FILE_CONTEXT_END`
       const payload = JSON.parse(dataLines.join("\n")) as {
         text?: string;
         message?: string;
+          response?: string;
         artifact?: NexusArtifact | null;
           imageCards?: NexusImageCard[];
         error?: string;
@@ -2514,19 +2879,25 @@ NEXUS_ATTACHED_FILE_CONTEXT_END`
           return;
         }
 
-      if (eventName === "done") {
-        if (payload.artifact) {
-          streamedArtifact = payload.artifact;
-        }
+        if (eventName === "done") {
+          if (payload.artifact) {
+            streamedArtifact = payload.artifact;
+          }
 
-        updateStreamingAssistant(
-          streamedAnswer ||
-            "RioMind Nexus completed the request, but no answer content was returned.",
-          streamedArtifact,
+          const doneAnswer =
+            streamedAnswer.trim() ||
+            (typeof payload.response === "string" ? payload.response.trim() : "") ||
+            "RioMind Nexus completed the request, but no answer content was returned."; 
+
+          streamedAnswer = doneAnswer;
+
+          updateStreamingAssistant(
+            doneAnswer,
+            streamedArtifact,
             streamedImageCards
-        );
-        return;
-      }
+          );
+          return;
+        }
 
       if (eventName === "error") {
         throw new Error(payload.error || "stream_failed");
@@ -2630,7 +3001,7 @@ NEXUS_ATTACHED_FILE_CONTEXT_END`
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const blocks = buffer.split(/\n\n/);
+        const blocks = buffer.split(/\r?\n\r?\n/);
         buffer = blocks.pop() ?? "";
 
         for (const block of blocks) {
@@ -2649,7 +3020,7 @@ NEXUS_ATTACHED_FILE_CONTEXT_END`
         streamedAnswer.trim() ||
         "RioMind Nexus completed the request, but no answer content was returned.";
 
-      updateStreamingAssistant(finalAnswer, streamedArtifact);
+      updateStreamingAssistant(finalAnswer, streamedArtifact, streamedImageCards);
 
       void saveMessage(activeId, "assistant", finalAnswer, streamedArtifact).catch(() => {
         // Keep the generated answer and artifact visible even if history persistence is slow or fails.
@@ -2679,6 +3050,7 @@ NEXUS_ATTACHED_FILE_CONTEXT_END`
       }
     } finally {
       setLoading(false);
+      setThinkingStartedAt(null);
       setStreamingAssistantId(null);
 
       // Do not immediately reload conversation state after a streamed answer.
@@ -2842,12 +3214,16 @@ NEXUS_ATTACHED_FILE_CONTEXT_END`
           { title: "Developer Console", icon: "🛠️", subtitle: "Keys and docs", disabled: true },
         ])}
 
-        {sidebarSection("teams", "Nexus Team", "👥", [
-          { title: "Voice Call", icon: "📞", subtitle: "Coming soon", disabled: true },
-          { title: "Conference", icon: "🎥", subtitle: "Coming soon", disabled: true },
-          { title: "Language Translation", icon: "🌐", subtitle: "Coming soon", disabled: true },
-          { title: "Meeting Notes", icon: "📝", subtitle: "Coming soon", disabled: true },
-        ])}
+        {sidebarSection("teams", "Nexus Teams", "👥", [
+            { title: "Teams Workspace", icon: "🏢", subtitle: "Teams, members, rooms", href: "/nexus/teams" },
+            { title: "Members & Roles", icon: "👤", subtitle: "Owner, admin, manager, analyst", href: "/nexus/teams" },
+            { title: "Rooms", icon: "💬", subtitle: "Team, meeting, voice rooms", href: "/nexus/teams" },
+            { title: "Shared Assets", icon: "📁", subtitle: "Files, reports, analytics, artifacts", href: "/nexus/teams" },
+            { title: "Voice Call", icon: "📞", subtitle: "Voice layer foundation", href: "/nexus/teams" },
+            { title: "Conference", icon: "🎥", subtitle: "Meeting rooms foundation", href: "/nexus/teams" },
+            { title: "Language Translation", icon: "🌐", subtitle: "Live translation foundation", href: "/nexus/teams" },
+            { title: "Meeting Notes", icon: "📝", subtitle: "Transcript, summary, action items", href: "/nexus/teams" },
+          ])}
 
         {sidebarSection("creator", "Creator Studio", "🎨", [
           { title: "Image Editor / Creator", icon: "🖼️", subtitle: "Images, logos, posters, edits", disabled: true },
@@ -3232,7 +3608,14 @@ NEXUS_ATTACHED_FILE_CONTEXT_END`
                               </div>
                             ) : (
                               <div className="nexus-answer-prose">
-                                {renderMessageContent(item.content)}
+                                {item.content === "✦" ? (
+                                    <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-bold text-cyan-100/80">
+                                      <span>✦</span>
+                                      <span>Thinking • {thinkingSeconds}s</span>
+                                    </span>
+                                  ) : (
+                                    renderMessageContent(item.content)
+                                  )}
                               </div>
                             )}
                           {item.role === "assistant" && item.artifact ? (
@@ -3302,9 +3685,9 @@ NEXUS_ATTACHED_FILE_CONTEXT_END`
                             onClick={() => startEditUserMessage(item.id, item.content)}
                             className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-300/10 bg-cyan-500/[0.04] px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-cyan-50/45 transition hover:border-cyan-300/25 hover:text-cyan-100"
                             title="Edit and regenerate"
+                            aria-label="Edit and regenerate"
                           >
-                            <Edit3 className="h-3 w-3" />
-                            Edit
+                            <Edit3 className="h-4 w-4" />
                           </button>
                         </div>
                       ) : null}
@@ -3953,12 +4336,23 @@ NEXUS_ATTACHED_FILE_CONTEXT_END`
                   }}
                 />
                 <button
-                  type="submit"
-                  disabled={loading || !message.trim()}
-                  className="rounded-[21px] border border-cyan-300/25 bg-cyan-500/15 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-500/20 disabled:opacity-40"
-                >
-                  Send
-                </button>
+                    type="button"
+                    title="Voice input"
+                    aria-label="Voice input"
+                    className="rounded-full p-3 text-white/55 transition hover:bg-white/[0.06] hover:text-cyan-100"
+                  >
+                    <Mic className="h-5 w-5" />
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={loading || !message.trim()}
+                    title="Send"
+                    aria-label="Send"
+                    className="rounded-full bg-white p-3 text-black transition hover:bg-cyan-100 disabled:opacity-40"
+                  >
+                    <ArrowUp className="h-5 w-5" />
+                  </button>
               </div>
 
               <div className="mt-2 px-2 pb-0.5 text-[11px] leading-5 text-white/32">

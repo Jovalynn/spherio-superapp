@@ -112,6 +112,14 @@ export default function RioMindWorkspacePage() {
               <div className="text-[10px] font-black uppercase tracking-[0.28em] text-cyan-100/50">
                 RioMind Nexus
               </div>
+              <Link
+                href="/nexus/intelligence"
+                className="mt-3 inline-flex items-center rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1.5 text-xs font-bold text-cyan-100 hover:bg-cyan-300/15"
+              >
+                🧠 Nexus Intelligence
+              </Link>
+              <div className="hidden">
+              </div>
               <h1 className="truncate text-2xl font-black text-cyan-50 sm:text-3xl">
                 Artifact Workspace
               </h1>

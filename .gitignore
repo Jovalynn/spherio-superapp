@@ -39,3 +39,60 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# ===== Spherio generated and local files =====
+
+# Environment and secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+
+# JavaScript / Next.js generated output
+node_modules/
+.next/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Logs and runtime files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pids/
+*.pid
+
+# Local editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temporary patch backups
+*.bak
+*.bak-*
+*.backup
+*.backup-*
+*.stable
+*.stable-*
+*.freeze
+*.freeze-*
+*~
+*.swp
+*.swo
+
+# Local backup directory
+backups/
+
+# Known accidental temporary files
+/0
+/2213
+/fake_sensitive_registry_test.xlsx
+
+# Temporary audit output
+/swap_sot_audit_*.txt
+
+# ===== End Spherio generated and local files =====

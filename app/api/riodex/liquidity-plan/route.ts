@@ -1,3 +1,4 @@
+import { SPHERIO_TREASURY_MULTISIG } from "@/lib/protocol/treasury";
 import { NextResponse } from "next/server";
 import { CosmWasmClient } from "@cosmjs/cosmwasm-stargate";
 import { SPHERIO_CHAIN } from "@/lib/spherioChain";
@@ -9,7 +10,7 @@ const PAIR_ADDR =
 const RUSD_CONTRACT =
   "rio14nurau9scuqhr3sczktx63sr8kdpvwh00zyftamrrn685vex2uus7ne2df";
 const TREASURY_MULTISIG =
-  "rio1nnhxsa49cc5e9vyxj6r6s3hwlkymcrletx7wch";
+  SPHERIO_TREASURY_MULTISIG;
 
 function rpcEndpoint() {
   return (

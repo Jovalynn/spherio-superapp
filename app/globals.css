@@ -72,3 +72,274 @@ body {
 .text-foreground {
   color: var(--foreground);
 }
+
+/* RioMind Nexus custom scrollbars */
+/* Nexus page-level fallback in case browser scroll is still active */
+body:has(.nexus-page) {
+  overflow: hidden;
+}
+
+.nexus-composer-textarea {
+  scrollbar-width: none;
+}
+
+.nexus-composer-textarea::-webkit-scrollbar {
+  display: none;
+}
+
+.nexus-scrollbar {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(103, 232, 249, 0.24) rgba(7, 16, 28, 0.16) !important;
+}
+
+.nexus-scrollbar::-webkit-scrollbar {
+  width: 7px !important;
+  height: 7px !important;
+}
+
+.nexus-scrollbar::-webkit-scrollbar-track {
+  background: rgba(7, 16, 28, 0.16) !important;
+  border-radius: 999px !important;
+}
+
+.nexus-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    180deg,
+    rgba(103, 232, 249, 0.28),
+    rgba(14, 116, 144, 0.34)
+  ) !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(7, 16, 28, 0.45) !important;
+}
+
+.nexus-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    180deg,
+    rgba(103, 232, 249, 0.46),
+    rgba(14, 116, 144, 0.50)
+  ) !important;
+}
+
+
+/* RioMind Nexus compact plus menu */
+.nexus-plus-menu-force-compact {
+  width: min(320px, calc(100vw - 24px)) !important;
+  max-height: min(360px, 70vh) !important;
+  overflow-y: auto !important;
+  padding: 10px !important;
+  border-radius: 20px !important;
+}
+
+.nexus-plus-menu-force-compact button,
+.nexus-plus-menu-force-compact a,
+.nexus-plus-menu-force-compact [role="button"] {
+  min-height: 38px !important;
+  padding: 8px 10px !important;
+  gap: 10px !important;
+  font-size: 13px !important;
+  line-height: 1.15 !important;
+}
+
+.nexus-plus-menu-force-compact svg {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.nexus-plus-menu-force-compact button:disabled,
+.nexus-plus-menu-force-compact [aria-disabled="true"] {
+  display: none !important;
+}
+
+.nexus-plus-menu-force-compact hr {
+  margin: 6px 0 !important;
+}
+
+.nexus-plus-menu-force-compact .border-t {
+  margin-top: 6px !important;
+  padding-top: 6px !important;
+}
+
+
+/* RioMind Nexus — premium readable assistant answers */
+.nexus-answer-prose {
+  max-width: 100%;
+  font-size: 0.94rem;
+  line-height: 1.78;
+  letter-spacing: 0.002em;
+  color: rgba(240, 249, 255, 0.88);
+}
+
+.nexus-answer-prose p {
+  margin: 0.58rem 0;
+}
+
+.nexus-answer-prose h1,
+.nexus-answer-prose h2,
+.nexus-answer-prose h3,
+.nexus-answer-prose h4 {
+  margin-top: 1.05rem;
+  margin-bottom: 0.42rem;
+  color: rgba(248, 253, 255, 0.96);
+  font-weight: 850;
+  letter-spacing: 0.015em;
+}
+
+.nexus-answer-prose h1 {
+  font-size: 1.08rem;
+}
+
+.nexus-answer-prose h2 {
+  font-size: 1.02rem;
+}
+
+.nexus-answer-prose h3,
+.nexus-answer-prose h4 {
+  font-size: 0.96rem;
+}
+
+.nexus-answer-prose ul,
+.nexus-answer-prose ol {
+  margin: 0.55rem 0 0.75rem 1.15rem;
+  padding-left: 0.25rem;
+}
+
+.nexus-answer-prose li {
+  margin: 0.28rem 0;
+  padding-left: 0.12rem;
+}
+
+.nexus-answer-prose strong {
+  color: rgba(255, 255, 255, 0.96);
+  font-weight: 850;
+}
+
+.nexus-answer-prose code {
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  border-radius: 0.45rem;
+  background: rgba(8, 18, 30, 0.68);
+  padding: 0.08rem 0.34rem;
+  color: rgba(186, 230, 253, 0.96);
+  font-size: 0.86em;
+}
+
+.nexus-answer-prose pre {
+  margin: 0.8rem 0;
+  overflow-x: auto;
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  border-radius: 1rem;
+  background: rgba(3, 9, 20, 0.72);
+  padding: 0.9rem;
+}
+
+.nexus-answer-prose pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.nexus-answer-prose table {
+  width: 100%;
+  margin: 0.85rem 0;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: 0.9rem;
+  font-size: 0.88rem;
+}
+
+.nexus-answer-prose th,
+.nexus-answer-prose td {
+  border: 1px solid rgba(125, 211, 252, 0.13);
+  padding: 0.55rem 0.65rem;
+  vertical-align: top;
+}
+
+.nexus-answer-prose th {
+  background: rgba(14, 165, 233, 0.08);
+  color: rgba(240, 249, 255, 0.96);
+  font-weight: 850;
+}
+
+@media (max-width: 640px) {
+  .nexus-answer-prose {
+    font-size: 0.9rem;
+    line-height: 1.72;
+  }
+}
+
+/* RioMind Nexus Teams — compact internal workspace scrollbars */
+.nexus-muted-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.42) rgba(15, 23, 42, 0.18);
+}
+
+.nexus-muted-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.nexus-muted-scrollbar::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.18);
+  border-radius: 999px;
+}
+
+.nexus-muted-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.38);
+  border: 1px solid rgba(15, 23, 42, 0.35);
+  border-radius: 999px;
+}
+
+.nexus-muted-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(103, 232, 249, 0.34);
+}
+
+/* Nexus Teams C3.1c interaction feedback */
+.nexus-toolbar-scroll button:not(:disabled),
+.nexus-toolbar-scroll label,
+[data-nexus-toolbar-dropdown] button:not(:disabled),
+[data-nexus-toolbar-dropdown] label,
+[data-nexus-toolbar-dropdown] select {
+  cursor: pointer;
+}
+
+.nexus-toolbar-scroll button:disabled,
+[data-nexus-toolbar-dropdown] button:disabled {
+  cursor: not-allowed;
+}
+
+[data-nexus-toolbar-dropdown] {
+  max-width: min(420px, calc(100vw - 32px));
+}
+
+/* Spherio interactive control cursors */
+button:not(:disabled),
+a[href],
+[role="button"]:not([aria-disabled="true"]),
+label[for],
+label:has(input),
+select,
+summary,
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+input[type="checkbox"],
+input[type="radio"],
+input[type="file"] {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled="true"],
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+}
+
+button,
+a[href],
+[role="button"],
+select,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+

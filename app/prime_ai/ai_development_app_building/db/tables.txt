@@ -1,0 +1,6 @@
+ai_builder_projects
+ai_builder_templates
+ai_model_routes
+ai_usage_credits
+ai_deployments
+developer_api_keys

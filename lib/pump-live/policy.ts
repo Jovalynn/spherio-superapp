@@ -1,3 +1,4 @@
+import { SPHERIO_TREASURY_MULTISIG } from "@/lib/protocol/treasury";
 export const PUMP_LIVE_POLICY_VERSION = "pump_live_v1";
 
 export const PUMP_LIVE_POLICY = {
@@ -27,7 +28,7 @@ export const PUMP_LIVE_POLICY = {
     displayDenomination: "RUSD",
     buyFeeBps: 100,
     sellFeeBps: 100,
-    protocolFeeRecipient: "rio1nnhxsa49cc5e9vyxj6r6s3hwlkymcrletx7wch",
+    protocolFeeRecipient: SPHERIO_TREASURY_MULTISIG,
     creatorFeeBps: 0,
     creatorFeeRecipient: null
   },
@@ -36,14 +37,14 @@ export const PUMP_LIVE_POLICY = {
     initialStatus: "bonding",
     stateMachine: ["bonding", "graduating", "graduated"],
     triggerType: "market_cap_or_reserve",
-    targetMarketCapRusd: "69000.000000",
+    targetMarketCapRusd: "65000.000000",
     graduationQuoteValueRusd: "15000.000000",
     targetCurveRioReserveRusd: "15000.000000",
     seedQuoteAsset: "urio",
     oraclePair: "RIO/RUSD",
     requiresOracleQuote: true,
     autoCreateRioDexPair: true,
-    rioDexFactory: "rio14ph4e660eyqz0j36zlkaey4zgzexm5twkmjlqaequxr2cjm9eprqguevzw",
+    rioDexFactory: "rio1nkp9nq5uval4uguef0hgea28sedmzs8vxhu6xqz890ddsxywm3eqsuyvu0",
     postGraduationTradingSurface: "riodex",
     postGraduationCurveDisabled: true
   },
@@ -61,20 +62,48 @@ export const PUMP_LIVE_POLICY = {
   creatorIncentives: {
     enabled: true,
     rewardSource: "graduation_surplus_only",
+    rewardThresholdUnit: "RIO market cap measured as RUSD-equivalent via RIO/RUSD valuation",
+    payoutSettlement: "80% stable/RUSD-equivalent value and 20% RIO",
     neverFromRequiredLiquidity: true,
+    requiresLpSeedProof: true,
+    requiresAntiAbuseClearance: true,
+    instantPostGraduationPayoutAllowed: false,
     baseRewardBps: 500,
     milestoneRewards: [
       {
         name: "market_cap_250k",
-        conditionType: "market_cap_rusd",
-        thresholdRusd: "250000.000000",
-        rewardBps: 250
+        conditionType: "rio_market_cap_rusd_equivalent",
+        thresholdRusdEquivalent: "250000.000000",
+        rewardBps: 250,
+        sustainDays: 3,
+        organicBuyersMin: 200,
+        organicBuyersTarget: 250,
+        requiresLpSeedProof: true,
+        requiresAntiAbuseClearance: true
       },
       {
         name: "market_cap_500k",
-        conditionType: "market_cap_rusd",
-        thresholdRusd: "500000.000000",
-        rewardBps: 250
+        conditionType: "rio_market_cap_rusd_equivalent",
+        thresholdRusdEquivalent: "500000.000000",
+        rewardBps: 250,
+        sustainDays: 4,
+        organicBuyersMin: 250,
+        organicBuyersTarget: 400,
+        requiresLpSeedProof: true,
+        requiresAntiAbuseClearance: true
+      },
+      {
+        name: "market_cap_1m",
+        conditionType: "rio_market_cap_rusd_equivalent",
+        thresholdRusdEquivalent: "1000000.000000",
+        rewardBps: 250,
+        rewardPercent: 2.5,
+        sustainDays: 4,
+        requiredSwaps: 1000,
+        organicBuyersMin: 600,
+        organicBuyersTarget: 1000,
+        requiresLpSeedProof: true,
+        requiresAntiAbuseClearance: true
       }
     ],
     maxTotalCreatorRewardBps: 1000,

@@ -79,9 +79,9 @@ const powerUps = [
 ];
 
 const ecosystemLinks = [
-  ["Screener", "Discovery, ranking, graduation visibility", "/riodex/markets"],
-  ["RioEx", "Trading, execution, pair intelligence", "/rioex/markets"],
-  ["Liquidity", "Pool creation and LP management", "/riodex/liquidity"],
+  ["Screener", "Discovery, ranking, graduation visibility", "/rioex"],
+  ["RioEx", "Trading, execution, pair intelligence", "/rioex"],
+  ["Pool", "Pool discovery and LP route management", "/riodex/pools"],
   ["RioExplorer", "Contract truth, activity, and transparency", "/rioexplorer"],
 ];
 

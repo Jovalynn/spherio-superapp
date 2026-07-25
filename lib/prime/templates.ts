@@ -1,3 +1,4 @@
+import { SPHERIO_TREASURY_MULTISIG } from "@/lib/protocol/treasury";
 export type PrimeTone = "gold" | "dark" | "green" | "violet";
 export type PrimeLiquidityBase = "RIO" | "RUSD";
 export type PrimeLiquidityMode = "manual" | "guided" | "deferred";
@@ -38,7 +39,7 @@ export type PrimeTemplate = {
 };
 
 export const PRIME_TREASURY_RECIPIENT =
-  "rio1nnhxsa49cc5e9vyxj6r6s3hwlkymcrletx7wch";
+  SPHERIO_TREASURY_MULTISIG;
 function enrichTemplate(template: PrimeTemplate): PrimeTemplate {
   return {
     ...template,

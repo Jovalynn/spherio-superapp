@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { getRioExRegistryPool, resolvePairByAddress } from "@/lib/rioex/registry";
+import {
+  MARKET_NORMALIZATION_GUARANTEES,
+  normalizePairDetail,
+} from "@/lib/riodex/market-normalization";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -46,34 +50,11 @@ export async function GET(
           "riodex_swaps",
         ],
       },
-      pair: {
-        pairAddress: pair.pairAddress,
-        displaySymbol: pair.displaySymbol,
-        canonicalSymbol: pair.canonicalSymbol,
-        baseAssetId: pair.baseAssetId,
-        quoteAssetId: pair.quoteAssetId,
-        baseSymbol: pair.baseAsset.symbol,
-        quoteSymbol: pair.quoteAsset.symbol,
-        baseDisplayName: pair.baseAsset.displayName,
-        quoteDisplayName: pair.quoteAsset.displayName,
-        baseLogoUrl: pair.baseAsset.logoUrl,
-        quoteLogoUrl: pair.quoteAsset.logoUrl,
-        feeBps: pair.feeBps,
-        isCanonical: pair.isCanonical,
-        isLive: pair.isLive,
-        liquidityUsd: pair.liquidityUsd,
-        liquidityHeight: pair.liquidityHeight,
-        liquidityTime: pair.liquidityTime,
-        liquiditySource: pair.liquiditySource,
-        liquidityUpdatedAt: pair.liquidityUpdatedAt,
-        lastSwapTime: pair.lastSwapTime,
-        lastSwapTxHash: pair.lastSwapTxHash,
-        feeRecipientAddress: pair.feeRecipientAddress,
-        feePolicy: pair.feePolicy,
-        quoteConvention: pair.quoteConvention,
-        routes: pair.routes,
-        source: pair.source,
+      normalized: {
+        version: "pair-detail.v1",
+        guarantees: MARKET_NORMALIZATION_GUARANTEES,
       },
+      pair: normalizePairDetail(pair),
     });
   } catch (error: any) {
     return NextResponse.json(

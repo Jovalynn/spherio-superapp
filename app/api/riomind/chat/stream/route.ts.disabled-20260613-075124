@@ -1,0 +1,166 @@
+import { NextRequest } from "next/server";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const encoder = new TextEncoder();
+
+function encodeEvent(event: string, payload: Record<string, unknown>) {
+  return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function chunkText(input: string) {
+  const words = input.split(/(\s+)/);
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    if ((current + word).length > 54 && current.trim()) {
+      chunks.push(current);
+      current = word;
+    } else {
+      current += word;
+    }
+  }
+
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function forwardHeaders(request: NextRequest) {
+  const headers = new Headers();
+  headers.set("Content-Type", "application/json");
+
+  const owner = request.headers.get("x-riomind-owner");
+  const nexusOwner = request.headers.get("x-nexus-owner");
+  const cookie = request.headers.get("cookie");
+
+  if (owner) headers.set("x-riomind-owner", owner);
+  if (nexusOwner) headers.set("x-nexus-owner", nexusOwner);
+  if (cookie) headers.set("cookie", cookie);
+
+  return headers;
+}
+
+export async function POST(request: NextRequest) {
+  const body = await request.json().catch(() => ({}));
+  const origin = new URL(request.url).origin;
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        controller.enqueue(
+          encodeEvent("status", {
+            product: "RioMind Nexus",
+            status: "connected",
+            message: "RioMind Nexus is preparing your response...",
+          })
+        );
+
+        await sleep(40);
+
+        const userMessage = typeof body?.message === "string" ? body.message : "";
+        const isArtifactRequest =
+          /\b(excel|xlsx|spreadsheet|workbook|docx|word document|pdf|pptx|powerpoint|presentation|deck|slides)\b/i.test(
+            userMessage
+          );
+
+        if (isArtifactRequest) {
+          controller.enqueue(
+            encodeEvent("status", {
+              product: "RioMind Nexus",
+              status: "artifact_preparing",
+              message: "Preparing the modern document artifact...",
+            })
+          );
+        } else {
+          controller.enqueue(
+            encodeEvent("status", {
+              product: "RioMind Nexus",
+              status: "thinking",
+              message: "Thinking...",
+            })
+          );
+        }
+
+        const response = await fetch(`${origin}/api/riomind/chat`, {
+          method: "POST",
+          headers: forwardHeaders(request),
+          body: JSON.stringify(body),
+          cache: "no-store",
+        });
+
+        const data = await response.json().catch(() => null);
+
+        if (!response.ok || !data?.ok) {
+          controller.enqueue(
+            encodeEvent("error", {
+              product: "RioMind Nexus",
+              error: data?.error || "stream_chat_failed",
+            })
+          );
+          controller.close();
+          return;
+        }
+
+        const answer = String(data.response || "");
+
+        controller.enqueue(
+          encodeEvent("start", {
+            product: "RioMind Nexus",
+            ok: true,
+          })
+        );
+
+        for (const chunk of chunkText(answer)) {
+          controller.enqueue(
+            encodeEvent("delta", {
+              text: chunk,
+            })
+          );
+
+          await sleep(10);
+        }
+
+        if (data.artifact) {
+          controller.enqueue(
+            encodeEvent("artifact", {
+              artifact: data.artifact,
+            })
+          );
+        }
+
+        controller.enqueue(
+          encodeEvent("done", {
+            ok: true,
+            product: "RioMind Nexus",
+            artifact: data.artifact || null,
+          })
+        );
+
+        controller.close();
+      } catch (error) {
+        controller.enqueue(
+          encodeEvent("error", {
+            product: "RioMind Nexus",
+            error: error instanceof Error ? error.message : "stream_failed",
+          })
+        );
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
+}

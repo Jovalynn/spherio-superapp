@@ -1,3 +1,4 @@
+import { SPHERIO_TREASURY_MULTISIG } from "@/lib/protocol/treasury";
 import { NextResponse } from "next/server";
 
 type RusdStateResponse = {
@@ -70,7 +71,7 @@ function buildFallbackRusdState(): RusdStateResponse {
     asset: "RUSD",
     unit: "leri",
     contract_address: "pending_live_contract_sync",
-    treasury_multisig: "rio1nnhxsa49cc5e9vyxj6r6s3hwlkymcrletx7wch",
+    treasury_multisig: SPHERIO_TREASURY_MULTISIG,
     issued_supply: {
       raw: String(issuedSupply),
       formatted: formatWhole(issuedSupply),
@@ -155,7 +156,7 @@ export async function GET() {
           asset: "RUSD",
           unit: "leri",
           contract_address: "pending_live_contract_sync",
-          treasury_multisig: "rio1nnhxsa49cc5e9vyxj6r6s3hwlkymcrletx7wch",
+          treasury_multisig: SPHERIO_TREASURY_MULTISIG,
           issued_supply: {
             raw: String(totalSupply),
             formatted: formatWhole(totalSupply),

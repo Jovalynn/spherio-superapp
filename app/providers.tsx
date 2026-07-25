@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { usePathname } from "next/navigation";
 import { ChainProvider } from "@cosmos-kit/react";
 
 // wallets
@@ -16,6 +17,7 @@ import { TxProvider } from "@/context/TxContext";
 
 // optional: your custom modal (only if you already wired walletModal)
 import WalletModal from "@/components/WalletModal";
+import { SpherioCosmosKitProvider } from "@/components/wallet/SpherioCosmosKitProvider";
 
 const SPHERIO_ASSET_LIST = {
   chain_name: SPHERIO_CHAIN.chain_name ?? "spherio",
@@ -35,6 +37,12 @@ const SPHERIO_ASSET_LIST = {
 };
 
 export default function Providers({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+
+  if (pathname?.startsWith("/riomind") || pathname?.startsWith("/nexus")) {
+    return <TxProvider>{children}</TxProvider>;
+  }
+
   return (
     <TxProvider>
       <ChainProvider
@@ -44,7 +52,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         wallets={[...keplrWallets, ...leapWallets, ...cosmostationWallets]}
         walletModal={WalletModal as any}
       >
-        {children}
+        <SpherioCosmosKitProvider>{children}</SpherioCosmosKitProvider>
       </ChainProvider>
     </TxProvider>
   );

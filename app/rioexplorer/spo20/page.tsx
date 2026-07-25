@@ -129,12 +129,18 @@ export default function RioExplorerSpo20List() {
               </div>
 
               <div className="mt-6 flex flex-wrap gap-3">
-                <Link href="/launch" className={buttonClass(true)}>CreateToken.live</Link>
-                <Link href="/launch" className={buttonClass(false)}>Pump.live</Link>
+                <Link href="/createtoken" className={buttonClass(true)}>CreateToken.live</Link>
+              <Link
+                href="/createtoken/prime"
+                className="rounded-full border border-white/15 bg-white/[0.04] px-4 py-2 text-xs font-bold text-white transition hover:border-cyan-300/50 hover:bg-cyan-300/10"
+              >
+                Prime
+              </Link>
+                <Link href="/pump.live" className={buttonClass(false)}>Pump.live</Link>
                 <Link href="/riodex/swap" className={buttonClass(false)}>Swap</Link>
-                <Link href="/riodex/pool" className={buttonClass(false)}>Pool</Link>
-                <Link href="/riodex/liquidity" className={buttonClass(false)}>Liquidity</Link>
-                <Link href="/rioex/markets" className={buttonClass(false)}>Screener</Link>
+                <Link href="/riodex/pools" className={buttonClass(false)}>Pool</Link>
+                <Link href="/riodex/pools" className={buttonClass(false)}>Liquidity</Link>
+                <Link href="/rioex" className={buttonClass(false)}>Screener</Link>
               </div>
             </div>
 

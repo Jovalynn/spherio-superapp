@@ -9,7 +9,7 @@ const CANONICAL_PAIR_ADDR =
 
 const FACTORY_ADDR =
   process.env.NEXT_PUBLIC_RIODEX_FACTORY_ADDRESS ||
-  "rio14ph4e660eyqz0j36zlkaey4zgzexm5twkmjlqaequxr2cjm9eprqguevzw";
+  "rio1nkp9nq5uval4uguef0hgea28sedmzs8vxhu6xqz890ddsxywm3eqsuyvu0";
 
 function rpcEndpoint() {
   return (

@@ -128,7 +128,7 @@ export default function Spo20Page() {
           </div>
 
           <div className="mt-5 text-xs text-slate-400">
-            (Placeholder commands — we’ll formalize once the SDK package name is locked.)
+            SDK commands will be published with the official Spherio developer package.
           </div>
         </div>
 

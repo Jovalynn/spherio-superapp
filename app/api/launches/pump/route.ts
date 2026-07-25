@@ -1,5 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getPumpLaunchSurfaceState } from "@/lib/launch/authority";
+import {
+  addLaunchEconomicsBlock,
+  enrichEconomicDeep,
+  fetchRioPriceContext,
+} from "@/lib/rioEconomicEnrichment";
 
 type IndexerSpo20Item = {
   asset_id: string;
@@ -50,11 +55,16 @@ function getIndexerBaseUrl() {
 function buildAgeLabel(index: number, createdAt?: string | null) {
   if (createdAt) {
     const diffMs = Date.now() - new Date(createdAt).getTime();
+
     if (Number.isFinite(diffMs) && diffMs >= 0) {
       const minutes = Math.max(1, Math.floor(diffMs / 60000));
+
       if (minutes < 60) return `${minutes}m`;
+
       const hours = Math.floor(minutes / 60);
+
       if (hours < 24) return `${hours}h`;
+
       const days = Math.floor(hours / 24);
       return `${days}d`;
     }
@@ -69,9 +79,22 @@ function toNum(value: string | number | null | undefined, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export async function GET() {
+function baseToHuman(value: string | number | null | undefined) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+
+  // Most RioDex/indexer reserve fields are base units.
+  return Math.abs(n) >= 1_000_000 ? n / 1_000_000 : n;
+}
+
+export async function GET(request: NextRequest) {
   try {
-    const fallback = getPumpLaunchSurfaceState();
+    const { origin } = new URL(request.url);
+    const rioPrice = await fetchRioPriceContext(origin);
+    const fallback = addLaunchEconomicsBlock(
+      enrichEconomicDeep(getPumpLaunchSurfaceState(), rioPrice),
+      rioPrice,
+    );
 
     try {
       const response = await fetch(`${getIndexerBaseUrl()}/api/spo20`, {
@@ -86,23 +109,32 @@ export async function GET() {
           const accent = fallback.monitorCards[index % fallback.monitorCards.length]?.accent ?? "mint";
           const trend = index === 0 ? "hot" : index === 1 ? "ready" : "watch";
 
-          const effectivePrice = toNum(item.market?.effective_price, 0.00053);
-          const reserve0 = toNum(item.market?.reserve_0, 0);
-          const reserve1 = toNum(item.market?.reserve_1, 0);
-          const volume24h = toNum(item.market?.volume_24h, 0);
+          const effectivePriceRio = toNum(item.market?.effective_price, 0.00053);
+          const reserve0Rio = baseToHuman(item.market?.reserve_0);
+          const reserve1Token = baseToHuman(item.market?.reserve_1);
+          const volume24hRio = baseToHuman(item.market?.volume_24h);
 
-          const marketCapSeed =
-            effectivePrice > 0
-              ? Math.max(effectivePrice * 1_000_000_000, 2400)
+          const marketCapRio =
+            effectivePriceRio > 0
+              ? Math.max(effectivePriceRio * 1_000_000_000, 2400)
               : index === 0
                 ? 707580
                 : index === 1
                   ? 621740
                   : Math.max(2400, 540000 - index * 73000);
 
+          const priceRusd =
+            rioPrice.rioRusd !== null ? effectivePriceRio * rioPrice.rioRusd : null;
+          const marketCapRusd =
+            rioPrice.rioRusd !== null ? marketCapRio * rioPrice.rioRusd : null;
+          const liquidityRusd =
+            rioPrice.rioRusd !== null ? reserve0Rio * rioPrice.rioRusd : null;
+          const volume24hRusd =
+            rioPrice.rioRusd !== null ? volume24hRio * rioPrice.rioRusd : null;
+
           const progressSeed =
-            reserve1 > 0
-              ? Math.max(8, Math.min(100, Math.round((reserve1 / 62500) * 100)))
+            reserve1Token > 0
+              ? Math.max(8, Math.min(100, Math.round((reserve1Token / 65000) * 100)))
               : index === 0
                 ? 76
                 : index === 1
@@ -117,15 +149,40 @@ export async function GET() {
             symbol: item.symbol,
             logoUrl: item.logo || undefined,
             ageLabel: buildAgeLabel(index, item.created_at ?? item.market?.pair_created_time ?? null),
-            marketCapUsd: marketCapSeed,
+
+            // Legacy field preserved, now aligned to RUSD when available.
+            marketCapUsd: marketCapRusd ?? marketCapRio,
+
+            marketCapRio,
+            marketCapRusd,
+            marketCapUsdt: marketCapRusd,
+            priceRio: effectivePriceRio,
+            priceRusd,
+            priceUsd: priceRusd,
+            priceUsdt: priceRusd,
+            liquidityRio: reserve0Rio,
+            liquidityRusd,
+            liquidityUsd: liquidityRusd,
+            liquidityUsdt: liquidityRusd,
+            volume24hRio,
+            volume24hRusd,
+            volume24hUsd: volume24hRusd,
+            volume24hUsdt: volume24hRusd,
+
             progressPercent: progressSeed,
             trend,
             accent,
+            valuationStatus: rioPrice.rioRusd !== null ? "priced" : "unpriced",
+            valuationSource: rioPrice.source,
+            valuationAuthority: rioPrice.authority,
             _marketMeta: {
-              volume24h,
-              reserve0,
-              reserve1,
+              volume24h: volume24hRio,
+              volume24hRio,
+              volume24hRusd,
+              reserve0: reserve0Rio,
+              reserve1: reserve1Token,
               trades24h: item.market?.trades_24h ?? 0,
+              rioPrice,
             },
           };
         });
@@ -136,13 +193,24 @@ export async function GET() {
 
         return NextResponse.json({
           ok: true,
-          source: "indexer_registry_market_bridge",
-          state: {
-            ...fallback,
-            apexLeader: apexLeader ? (({ _marketMeta, ...rest }) => rest)(apexLeader) : fallback.apexLeader,
-            monitorCards: monitorCards.length ? monitorCards : fallback.monitorCards,
-            newlyLaunched: newlyLaunched.length ? newlyLaunched : fallback.newlyLaunched,
+          source: "indexer_registry_market_bridge_rusd_enriched",
+          valuation: {
+            rioRusd: rioPrice.rioRusd,
+            rioUsd: rioPrice.rioUsd,
+            rioUsdt: rioPrice.rioUsdt,
+            source: rioPrice.source,
+            authority: rioPrice.authority,
+            updatedAt: rioPrice.updatedAt,
           },
+          state: addLaunchEconomicsBlock(
+            {
+              ...fallback,
+              apexLeader: apexLeader ? (({ _marketMeta, ...rest }) => rest)(apexLeader) : fallback.apexLeader,
+              monitorCards: monitorCards.length ? monitorCards : fallback.monitorCards,
+              newlyLaunched: newlyLaunched.length ? newlyLaunched : fallback.newlyLaunched,
+            },
+            rioPrice,
+          ),
         });
       }
     } catch {
@@ -152,7 +220,15 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       state: fallback,
-      source: "fallback_authority_shape",
+      source: "fallback_authority_shape_rusd_enriched",
+      valuation: {
+        rioRusd: rioPrice.rioRusd,
+        rioUsd: rioPrice.rioUsd,
+        rioUsdt: rioPrice.rioUsdt,
+        source: rioPrice.source,
+        authority: rioPrice.authority,
+        updatedAt: rioPrice.updatedAt,
+      },
     });
   } catch (error) {
     const message =

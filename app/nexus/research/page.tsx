@@ -33,9 +33,28 @@ export default function NexusResearchPage() {
     void loadProjects();
   }, []);
 
-  function startResearch() {
+  async function startResearch() {
     const cleanTopic = topic.trim();
     if (!cleanTopic) return;
+
+    try {
+      await fetch("/api/riomind/research/sessions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: cleanTopic.slice(0, 80),
+          goal: cleanTopic,
+          depth,
+          sources,
+          outputType: format,
+          status: "active",
+        }),
+      });
+    } catch {
+      // Do not block the handoff to chat if session persistence fails.
+    }
 
     const prompt = [
       "Start a Nexus Research Workspace task.",
@@ -163,7 +182,7 @@ export default function NexusResearchPage() {
 
             <button
               type="button"
-              onClick={startResearch}
+              onClick={() => void startResearch()}
               disabled={!topic.trim()}
               className="mt-5 rounded-2xl border border-cyan-300/25 bg-cyan-500/12 px-5 py-3 text-sm font-black text-cyan-100 transition hover:bg-cyan-500/18 disabled:cursor-not-allowed disabled:opacity-40"
             >

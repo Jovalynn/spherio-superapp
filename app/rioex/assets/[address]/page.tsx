@@ -181,10 +181,10 @@ export default function RioExAssetProfilePage() {
           assetTerminal: `/rioex/assets/${encodeURIComponent(profile.assetAddress)}${queryString ? `?${queryString}` : ""}`,
           marketBoard: "/rioex/assets",
           hero: "/rioex/assets",
-          trade: "/riodex/markets",
-          pool: "/riodex/pool",
+          trade: "/rioex",
+          pool: "/riodex/pools",
           swap: "/riodex/swap",
-          liquidity: "/riodex/liquidity",
+          liquidity: "/riodex/pools",
         },
       }
     : null;

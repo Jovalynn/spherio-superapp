@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import CopyableValue from "@/components/rioexplorer/CopyableValue";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 function clsx(...xs: Array<string | false | undefined | null>) {
@@ -428,16 +429,18 @@ export default function RioExplorerBlocks() {
                         key={`${row.height}-${row.txHash}-${row.activityType}`}
                         className="grid grid-cols-[1.1fr_0.65fr_1.2fr_0.8fr_0.9fr_1fr_0.9fr_0.7fr] gap-4 px-6 py-4 text-sm text-white/80"
                       >
-                        <div>{formatDateTime(row.time)}</div>
+                        <div>
+                          <CopyableValue value={formatDateTime(row.time)} left={14} right={8} mono={false} label="Copy time" />
+                        </div>
 
                         <div className="font-semibold text-white">
                           <Link href={`/rioexplorer/blocks/${row.height}`} className="hover:underline decoration-white/20">
-                            {row.height}
+                            <CopyableValue value={String(row.height)} left={10} right={0} mono={false} label="Copy block height" />
                           </Link>
                         </div>
 
                         <div className="font-mono text-[12px] text-white/86" title={row.txHash}>
-                          {shortHash(row.txHash, 14, 12)}
+                          <CopyableValue value={row.txHash} left={12} right={10} label="Copy tx hash" />
                         </div>
 
                         <div className="text-white/75">{row.activityType}</div>
@@ -447,17 +450,16 @@ export default function RioExplorerBlocks() {
                         </div>
 
                         <div className="truncate text-white/60" title={row.subjectAsset || ""}>
-                          {row.subjectAsset ? shortHash(row.subjectAsset, 12, 10) : "—"}
+                          <CopyableValue value={row.subjectAsset} left={10} right={8} label="Copy subject" />
                         </div>
 
                         <div className="truncate text-white/70" title={row.amount || ""}>
-                          {formatAmount(row.amount)}
+                          <CopyableValue value={row.amount ? String(row.amount) : ""} left={12} right={8} mono={true} label="Copy amount" />
                         </div>
 
                         <div>
                           <Link
                             href={`/rioexplorer/tx/${row.txHash}`}
-                            target="_blank"
                             className="inline-flex rounded-[10px] border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-white/86 hover:bg-white/[0.08]"
                           >
                             Open

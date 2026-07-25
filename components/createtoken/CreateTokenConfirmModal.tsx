@@ -1,4 +1,5 @@
 "use client";
+import { SPHERIO_TREASURY_MULTISIG } from "@/lib/protocol/treasury";
 
 import { useMemo, useState } from "react";
 import {
@@ -11,7 +12,7 @@ export const CREATE_TOKEN_POLICY = {
   chainId: "spherio-1",
   feeUrio: "1000000",
   feeRioDisplay: "1.000000",
-  feeRecipient: "rio1nnhxsa49cc5e9vyxj6r6s3hwlkymcrletx7wch",
+  feeRecipient: SPHERIO_TREASURY_MULTISIG,
 };
 
 export type CreateTokenDraft = {

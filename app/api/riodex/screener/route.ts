@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { normalizeScreenerPayload } from "@/lib/riodex/market-normalization";
+import {
+  enrichEconomicDeep,
+  fetchRioPriceContext,
+} from "@/lib/rioEconomicEnrichment";
 
 function candidateIndexerBaseUrls() {
   const candidates = [
@@ -21,6 +26,8 @@ function candidateIndexerBaseUrls() {
 
 export async function GET(request: NextRequest) {
   const errors: string[] = [];
+  const { origin } = new URL(request.url);
+  const rioPrice = await fetchRioPriceContext(origin);
 
   for (const baseUrl of candidateIndexerBaseUrls()) {
     const controller = new AbortController();
@@ -45,14 +52,38 @@ export async function GET(request: NextRequest) {
       const raw = await response.text();
       clearTimeout(timeout);
 
-      return new NextResponse(raw, {
+      let body = raw;
+      const contentType = response.headers.get("content-type") || "";
+
+      if (response.ok && contentType.includes("application/json")) {
+        try {
+          const parsed = JSON.parse(raw);
+          const normalized = normalizeScreenerPayload(parsed);
+          const enriched = enrichEconomicDeep(normalized, rioPrice) as any;
+
+          enriched.valuation = {
+            ...(enriched.valuation ?? {}),
+            rioRusd: rioPrice.rioRusd,
+            rioUsd: rioPrice.rioUsd,
+            rioUsdt: rioPrice.rioUsdt,
+            source: rioPrice.source,
+            authority: rioPrice.authority,
+            updatedAt: rioPrice.updatedAt,
+          };
+
+          body = JSON.stringify(enriched);
+        } catch {
+          body = raw;
+        }
+      }
+
+      return new NextResponse(body, {
         status: response.status,
         headers: {
-          "content-type":
-            response.headers.get("content-type") ||
-            "application/json; charset=utf-8",
+          "content-type": "application/json; charset=utf-8",
           "cache-control": "no-store",
           "x-spherio-upstream": baseUrl,
+          "x-spherio-normalized": "screener.v1.rusd-enriched",
         },
       });
     } catch (error: any) {
@@ -67,7 +98,12 @@ export async function GET(request: NextRequest) {
       error: "Failed to load RioDex screener.",
       attempted_upstreams: candidateIndexerBaseUrls(),
       details: errors,
+      valuation: {
+        rioRusd: rioPrice.rioRusd,
+        source: rioPrice.source,
+        authority: rioPrice.authority,
+      },
     },
-    { status: 502 }
+    { status: 502 },
   );
 }

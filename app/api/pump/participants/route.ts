@@ -61,7 +61,7 @@ function buildCurveInput(body: PumpParticipantsRequest): PumpCurveInput {
     0,
   );
   const targetBaseReserveForGraduation = Math.max(
-    toNumber(body.targetBaseReserveForGraduation, 500_000),
+    toNumber(body.targetBaseReserveForGraduation, 650_000),
     1,
   );
   const feeBps = Math.max(toNumber(body.feeBps, 100), 0);

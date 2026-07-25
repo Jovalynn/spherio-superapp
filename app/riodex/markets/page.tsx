@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import ExchangeSurfaceNav from "@/components/exchange/ExchangeSurfaceNav";
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
+  BarChart3,
   Bell,
-  CandlestickChart,
   ChevronDown,
+  ExternalLink,
+  Flame,
+  Layers3,
   Search,
-  Sparkles,
+  ShieldCheck,
   Star,
   TrendingUp,
 } from "lucide-react";
@@ -18,7 +21,6 @@ import {
   getRegistryLogoUrl,
   getRegistryPairLabel,
 } from "@/lib/riodex/token-registry";
-import { normalizePairLabel } from "@/lib/riodex/display";
 import {
   buildRioDexSurfaceHref,
   RIODEX_HOME_ROUTE,
@@ -28,38 +30,70 @@ import {
 
 const WATCHLIST_STORAGE_KEY = "riodex:screener:watchlist";
 
-type PairMeta = {
-  pair_address: string;
-  factory_address?: string | null;
-  lp_token_address?: string | null;
-  pair_key?: string | null;
-  display_symbol?: string | null;
-  fee_bps?: number | null;
-  is_canonical?: boolean | null;
-  is_live?: boolean | null;
-  created_height?: string | number | null;
-  created_time?: string | null;
-  updated_at?: string | null;
-  asset_0_id?: string | null;
-  asset_1_id?: string | null;
-  asset_0_type?: string | null;
-  asset_1_type?: string | null;
+type TimeframeMode = "5m" | "1h" | "6h" | "24h";
+type RankingMode = "volume" | "liquidity" | "txns" | "new" | "mcap";
+type OriginFilter =
+  | "all"
+  | "pump"
+  | "prime"
+  | "spo20"
+  | "native"
+  | "stable"
+  | "bridged"
+  | "reference";
+type ReadinessFilter =
+  | "all"
+  | "route_ready"
+  | "trade_ready"
+  | "awaiting_quote"
+  | "reserves_indexed"
+  | "awaiting_snapshots"
+  | "no_liquidity";
+type SideMode = "quick_swap" | "watchlist" | "alerts" | "new_markets" | null;
+type TradeSide = "buy" | "sell";
+
+type OperatorItem = {
+  mode: Exclude<SideMode, null>;
+  label: string;
+  Icon: typeof BarChart3;
 };
+
+const OPERATOR_ITEMS: OperatorItem[] = [
+  { mode: "quick_swap", label: "Quick Swap", Icon: BarChart3 },
+  { mode: "watchlist", label: "Watchlist", Icon: Star },
+  { mode: "alerts", label: "Alerts", Icon: Bell },
+  { mode: "new_markets", label: "New Markets", Icon: Flame },
+];
+
 type ScreenerSummary = {
-  live_pools: number;
-  canonical_pools: number;
-  total_volume_24h: number;
-  total_txns_24h: number;
-  candidate_count: number;
-  promoted_count: number;
+  live_pools?: number;
+  canonical_pools?: number;
+  total_volume_24h?: number | null;
+  total_txns_24h?: number | null;
+  candidate_count?: number;
+  promoted_count?: number;
+  livePools?: number;
+  canonical?: number;
+  volume24h?: number | null;
+  txns24h?: number | null;
+  candidates?: number;
+  promoted?: number;
 };
 
 type ScreenerAuthorityRow = {
+  rank?: number;
   pairAddress?: string;
+  pair_address?: string;
+  pairKey?: string;
+  pair_key?: string;
   displaySymbol?: string;
+  display_symbol?: string;
   canonicalSymbol?: string;
+  canonical_symbol?: string;
   baseAssetId?: string;
+  base_asset_id?: string;
   quoteAssetId?: string;
+  quote_asset_id?: string;
   baseSymbol?: string | null;
   quoteSymbol?: string | null;
   baseDisplayName?: string | null;
@@ -68,418 +102,605 @@ type ScreenerAuthorityRow = {
   quoteLogoUrl?: string | null;
   baseAssetType?: string | null;
   quoteAssetType?: string | null;
+  asset_0_type?: string | null;
+  asset_1_type?: string | null;
+  asset_class?: string | null;
+  origin_chain?: string | null;
+  execution_chain?: string | null;
   feeBps?: number | null;
+  fee_bps?: number | null;
   feePolicy?: string | null;
   feeRecipientAddress?: string | null;
   isCanonical?: boolean;
+  is_canonical?: boolean;
   isLive?: boolean;
+  is_live?: boolean;
   liquidityUsd?: number | null;
+  liquidity_usd?: number | null;
+  liquidity_quote?: number | null;
+  liquidityStatus?: string | null;
+  liquidity_status?: string | null;
+  liquidityLabel?: string | null;
+  liquidity_label?: string | null;
+  reserveLabel?: string | null;
+  reserve_label?: string | null;
+  reserve0Amount?: string | null;
+  reserve_0_amount?: string | null;
+  reserve1Amount?: string | null;
+  reserve_1_amount?: string | null;
   liquidityHeight?: string | number | null;
+  liquidity_height?: string | number | null;
   liquidityTime?: string | null;
-  liquiditySource?: string | null;
+  liquidity_time?: string | null;
   liquidityUpdatedAt?: string | null;
+  liquiditySource?: string | null;
+  volume24h?: number | null;
+  volume_24h?: number | null;
+  volumeStatus?: string | null;
+  volume_status?: string | null;
+  txns24h?: number | null;
+  txns_24h?: number | null;
+  txnsStatus?: string | null;
+  txns_status?: string | null;
+  price?: number | null;
+  market_cap?: number | null;
+  fully_diluted_value?: number | null;
+  fdv_reference_value?: string | number | null;
+  fdvReferenceValue?: string | number | null;
+  fdv_reference_asset?: string | null;
+  fdvReferenceAsset?: string | null;
+  fdv_reference_source?: string | null;
+  fdvReferenceSource?: string | null;
+  price_change_5m?: string | number | null;
+  priceChange5m?: string | number | null;
+  price_change_1h?: string | number | null;
+  priceChange1h?: string | number | null;
+  price_change_6h?: string | number | null;
+  priceChange6h?: string | number | null;
+  price_change_24h?: string | number | null;
+  priceChange24h?: string | number | null;
+  price_change_source?: string | null;
+  priceChangeSource?: string | null;
+  trend_status?: string | null;
+  trendStatus?: string | null;
+  age_seconds?: number | null;
+  createdHeight?: string | number | null;
+  created_height?: string | number | null;
+  lastSyncedHeight?: string | number | null;
+  last_synced_height?: string | number | null;
   lastSwapTime?: string | null;
+  last_trade_time?: string | null;
   lastSwapTxHash?: string | null;
-  quoteConvention?: "asset_1_per_asset_0";
+  status?: string | null;
+  class?: string | null;
+  promotion_status?: string | null;
+  source?: string | null;
+  origin?: string | null;
+  assetOrigin?: string | null;
+  asset_origin?: string | null;
+  launchSource?: string | null;
+  launch_source?: string | null;
+  launchRail?: string | null;
+  launch_rail?: string | null;
+  routeSource?: string | null;
+  route_source?: string | null;
   routes?: {
-    assetTerminal: string;
+    assetTerminal?: string;
     marketBoard?: string;
     hero?: string;
-    pool: string;
-    swap: string;
-    liquidity: string;
+    trade?: string;
+    pool?: string;
+    swap?: string;
+    liquidity?: string;
+    explorer?: string;
   };
-  source?: string;
-
-  pair_address: string;
-  display_symbol: string;
-  base_asset_id: string;
-  quote_asset_id: string;
-  asset_class: string | null;
-  origin_chain: string | null;
-  execution_chain: string | null;
-  is_executable_on_spherio: boolean | null;
-  price: number | null;
-  liquidity_quote: number | null;
-  volume_24h: number | null;
-  txns_24h: number | null;
-  age_seconds: number | null;
-  is_live: boolean;
-  is_canonical: boolean;
-  promotion_status: string | null;
-  market_cap: number | null;
-  fully_diluted_value: number | null;
-  last_trade_time: string | null;
-  last_liquidity_time: string | null;
-  factory_address: string | null;
 };
 
 type ScreenerAuthorityResponse = {
   ok: boolean;
+  warning?: string;
+  source?: string;
   summary?: ScreenerSummary;
+  stats?: ScreenerSummary;
   rows?: ScreenerAuthorityRow[];
+  items?: ScreenerAuthorityRow[];
+  pairs?: ScreenerAuthorityRow[];
+  markets?: ScreenerAuthorityRow[];
   generated_at?: string;
   error?: string;
 };
 
+type MarketOrigin =
+  | "PUMP.live"
+  | "Prime"
+  | "SPO-20"
+  | "Native"
+  | "Stable"
+  | "Bridged"
+  | "Reference";
 
-type DiscoveryFilter =
-  | "trending"
-  | "new_pairs"
-  | "liquidity"
-  | "volume"
-  | "activity"
-  | "candidates"
-  | "promoted";
-
-type ClassFilter =
-  | "all_classes"
-  | "canonical"
-  | "spherio_live"
-  | "multichain"
-  | "bridged"
-  | "reference";
-
-type StatusFilter =
-  | "all_statuses"
-  | "live"
-  | "canonical"
-  | "candidate"
-  | "review"
-  | "promoted"
-  | "rioex";
-
-type SideMode =
-  | "watchlist"
-  | "alerts"
-  | "multicharts"
-  | "new_pairs"
-  | "gainers_losers"
-  | null;
-
-type RankingMode = "volume" | "liquidity" | "mcap" | "txns" | "new";
-type TimeframeMode = "24h" | "5m" | "1h" | "6h";
+type MarketReadiness =
+  | "Route Ready"
+  | "Trade Ready"
+  | "Awaiting Quote"
+  | "Reserves Indexed"
+  | "Awaiting Snapshots"
+  | "No Liquidity"
+  | "Pair Indexed";
 
 type MarketRow = {
-  pair: PairMeta;
+  rank: number;
   pairAddress: string;
-  symbol: string;
-  logo0: string | null;
-  logo1: string | null;
-  classLabel: "Canonical" | "Spherio Live" | "Multichain" | "Bridged" | "Reference";
-  price: number;
-  liquidityUsd: number;
-  windowVolume: number;
-  windowTxns: number;
-  ageDays: number | null;
-  lastActivity: string | null;
-  mcap: number | null;
-  changePct: number | null;
-  statuses: Array<"Live" | "Canonical" | "Candidate" | "Review" | "Promoted" | "RioEx">;
-  alertFlags: string[];
+  pairKey: string | null;
+  displaySymbol: string;
+  canonicalSymbol: string;
+  baseAssetId: string;
+  quoteAssetId: string;
+  baseSymbol: string;
+  quoteSymbol: string;
+  baseLogoUrl: string | null;
+  quoteLogoUrl: string | null;
+  baseAssetType: string | null;
+  quoteAssetType: string | null;
+  origin: MarketOrigin;
+  readiness: MarketReadiness;
+  readinessDetail: string;
+  sourceDetail: string;
+  price: number | null;
+  priceLabel: string;
+  marketCap: number | null;
+  marketCapLabel: string;
+  fullyDilutedValue: number | null;
+  fdvLabel: string;
+  fdvReferenceValue: number | null;
+  fdvReferenceAsset: string | null;
+  fdvReferenceLabel: string;
+  priceMoveLabel: string;
+  priceMoveSource: string | null;
+  trendStatus: string | null;
+  trendLabel: string;
+  liquidityUsd: number | null;
+  liquidityLabel: string;
+  reserveLabel: string | null;
+  volume24h: number | null;
+  volumeLabel: string;
+  txns24h: number | null;
+  txnsLabel: string;
+  ageLabel: string;
+  isLive: boolean;
+  isCanonical: boolean;
   feeBps: number | null;
-  feePolicy: string | null;
+  alertFlags: string[];
   routes: {
     assetTerminal: string;
-    marketBoard?: string;
-    hero?: string;
+    marketBoard: string;
+    hero: string;
+    trade: string;
     pool: string;
     swap: string;
     liquidity: string;
+    explorer: string;
   };
-  truthSource: "authoritative_registry" | "authoritative_screener";
-  lastSwapRef: string | null;
+  canQuickSwap: boolean;
+  truthSource: string;
+  raw: ScreenerAuthorityRow;
 };
 
-function shell(
-  tone: "hero" | "panel" | "subtle" | "magenta" | "amber" | "cyan" = "panel"
-) {
-  const tones = {
-    hero:
-      "border-white/10 bg-[linear-gradient(180deg,rgba(19,21,36,0.92),rgba(7,10,21,0.97))] shadow-[0_22px_80px_rgba(0,0,0,0.40)]",
-    panel:
-      "border-white/10 bg-white/[0.05] shadow-[0_16px_50px_rgba(0,0,0,0.32)]",
-    subtle:
-      "border-white/8 bg-white/[0.04] shadow-[0_10px_28px_rgba(0,0,0,0.22)]",
-    magenta:
-      "border-fuchsia-400/15 bg-[linear-gradient(180deg,rgba(90,24,65,0.18),rgba(8,12,24,0.96))]",
-    amber:
-      "border-amber-400/15 bg-[linear-gradient(180deg,rgba(120,53,15,0.14),rgba(8,12,24,0.96))]",
-    cyan:
-      "border-cyan-400/15 bg-[linear-gradient(180deg,rgba(8,65,82,0.18),rgba(8,12,24,0.96))]",
-  };
-
-  return `rounded-[28px] border backdrop-blur-xl ${tones[tone]}`;
+function cx(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
 }
 
-function formatNumber(n: number, d = 2) {
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: d,
-  }).format(Number.isFinite(n) ? n : 0);
+function panel(extra = "") {
+  return `rounded-[22px] border border-white/10 bg-[#11131b]/92 shadow-[0_18px_70px_rgba(0,0,0,0.35)] backdrop-blur-xl ${extra}`;
 }
 
-function formatMoney(n: number, d = 0) {
-  return `$${new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: d,
-  }).format(Number.isFinite(n) ? n : 0)}`;
+function softPanel(extra = "") {
+  return `rounded-[18px] border border-white/10 bg-white/[0.045] ${extra}`;
 }
 
-function formatPrice(n: number) {
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 6,
-  }).format(Number.isFinite(n) ? n : 0);
+function compactNumber(value: number | null | undefined, decimals = 2) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(decimals)}B`;
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(decimals)}M`;
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(decimals)}K`;
+  return value.toFixed(abs >= 1 ? decimals : 6).replace(/\.0+$/, "");
 }
 
-function shortAddr(v?: string | null, left = 10, right = 8) {
-  if (!v) return "—";
-  if (v.length <= left + right) return v;
-  return `${v.slice(0, left)}...${v.slice(-right)}`;
+function money(value: number | null | undefined, decimals = 0) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return `$${compactNumber(value, decimals)}`;
 }
 
-function toNumber(v: unknown): number {
-  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-  if (typeof v === "string") {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : 0;
+function priceLabel(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value) || value <= 0) {
+    return "Awaiting quote";
   }
-  return 0;
+  if (value < 0.000001) return value.toExponential(3);
+  return `$${compactNumber(value, value >= 1 ? 4 : 8)}`;
 }
 
-function fromBaseUnits(baseAmount?: string | number | null, decimals = 6) {
-  const n = Number(baseAmount ?? 0);
-  if (!Number.isFinite(n)) return 0;
-  return n / 10 ** decimals;
+function fdvReferenceLabel(value: number | null, asset: string | null) {
+  if (value === null || !asset) return "Pending";
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${asset}`;
 }
 
-function ageDays(value?: string | null) {
-  if (!value) return null;
-  const ts = new Date(value).getTime();
-  if (!Number.isFinite(ts)) return null;
-  return Math.max(0, Math.floor((Date.now() - ts) / 86400000));
+function trendLabel(status: string | null) {
+  if (status === "active_24h") return "Active 24h";
+  if (status === "dormant") return "Dormant";
+  if (status === "liquidity_seeded_untraded") return "Seeded / Untraded";
+  if (status === "unpriced") return "Unpriced";
+  return "Trend pending";
 }
 
-function formatActivityTime(value?: string | null) {
+function priceMoveLabelFromSource(source: string | null) {
+  if (source === "insufficient_recent_swap_history") return "Pending";
+  if (source === "active_recent_window_pending_price_baseline") return "Baseline pending";
+  return "Pending";
+}
+
+function shortAddr(value?: string | null, left = 8, right = 6) {
   if (!value) return "—";
-  try {
-    return new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(value));
-  } catch {
-    return value;
+  if (value.length <= left + right + 3) return value;
+  return `${value.slice(0, left)}…${value.slice(-right)}`;
+}
+
+function toNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function text(value: unknown) {
+  return String(value ?? "").trim();
+}
+
+function firstText(...values: unknown[]) {
+  for (const value of values) {
+    const v = text(value);
+    if (v) return v;
   }
+  return "";
 }
 
-function pairDisplayLabel(pair?: PairMeta | null) {
-  if (!pair) return "—";
-  return normalizePairLabel({
-    displaySymbol: pair.display_symbol,
-    asset0Id: pair.asset_0_id,
-    asset1Id: pair.asset_1_id,
-  });
+function ageLabelFromSeconds(seconds?: number | null) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return "—";
+  if (seconds < 3600) return `${Math.max(1, Math.floor(seconds / 60))}m`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  if (seconds < 86400 * 30) return `${Math.floor(seconds / 86400)}d`;
+  return `${Math.floor(seconds / (86400 * 30))}mo`;
+}
+
+function isRioSymbol(symbol?: string | null) {
+  return ["RIO", "URIO"].includes(text(symbol).toUpperCase());
+}
+
+function isStableSymbol(symbol?: string | null) {
+  return ["RUSD", "USDT", "USDC", "DAI"].includes(text(symbol).toUpperCase());
+}
+
+function isPricingSymbol(symbol?: string | null) {
+  return isRioSymbol(symbol) || isStableSymbol(symbol);
+}
+
+function preferredPairLabel(baseSymbol: string, quoteSymbol: string, fallback: string) {
+  const base = text(baseSymbol) || "BASE";
+  const quote = text(quoteSymbol) || "QUOTE";
+
+  // Keep the chain reference market familiar and monetary: RIO / RUSD.
+  if (isRioSymbol(base) && isStableSymbol(quote)) return `${base} / ${quote}`;
+  if (isRioSymbol(quote) && isStableSymbol(base)) return `${quote} / ${base}`;
+
+  // For launched/asset markets, show the discovered asset first and the pricing asset second.
+  if (isPricingSymbol(base) && !isPricingSymbol(quote)) return `${quote} / ${base}`;
+  if (!isPricingSymbol(base) && isPricingSymbol(quote)) return `${base} / ${quote}`;
+
+  return fallback || `${base} / ${quote}`;
 }
 
 
-function buildAuthoritativeSurfaceRoutes(
-  pairAddress: string
-): MarketRow["routes"] {
+
+function parsePairSymbols(label?: string | null): { left: string; right: string } | null {
+  const raw = text(label).replace(/\s+/g, " ");
+  const parts = raw.includes("/") ? raw.split("/").map((v) => v.trim()).filter(Boolean) : [];
+  if (parts.length >= 2) return { left: parts[0], right: parts[1] };
+  return null;
+}
+
+function fallbackSymbolFromAssetId(assetId: string, parsed?: string) {
+  if (assetId === "urio") return "RIO";
+  if (parsed) return parsed;
+  if (!assetId) return "ASSET";
+  // Contract addresses are not symbols. Keep them short and visibly address-like only as a last resort.
+  return `${assetId.slice(0, 6).toUpperCase()}…`;
+}
+
+function marketAssetSymbol(row?: MarketRow | null) {
+  if (!row) return "TOKEN";
+  if (isPricingSymbol(row.baseSymbol) && !isPricingSymbol(row.quoteSymbol)) return row.quoteSymbol;
+  if (!isPricingSymbol(row.baseSymbol) && isPricingSymbol(row.quoteSymbol)) return row.baseSymbol;
+  if (isRioSymbol(row.baseSymbol) && isStableSymbol(row.quoteSymbol)) return row.baseSymbol;
+  return row.baseSymbol || row.quoteSymbol || "TOKEN";
+}
+
+function pricingAssetSymbol(row?: MarketRow | null) {
+  if (!row) return "RIO";
+  if (isPricingSymbol(row.baseSymbol) && !isPricingSymbol(row.quoteSymbol)) return row.baseSymbol;
+  if (!isPricingSymbol(row.baseSymbol) && isPricingSymbol(row.quoteSymbol)) return row.quoteSymbol;
+  if (isRioSymbol(row.baseSymbol) && isStableSymbol(row.quoteSymbol)) return row.quoteSymbol;
+  return row.quoteSymbol || row.baseSymbol || "RIO";
+}
+
+function buildRoutes(row: ScreenerAuthorityRow, pairAddress: string): MarketRow["routes"] {
   const fallback = buildRioDexSurfaceHref(pairAddress);
   const encoded = encodeURIComponent(pairAddress);
   return {
-    assetTerminal: `/rioex/markets/${encoded}`,
-    marketBoard: "/rioex/markets",
-    hero: "/rioex",
-    pool: fallback.pool,
-    swap: fallback.swap,
-    liquidity: fallback.liquidity,
+    assetTerminal: row.routes?.assetTerminal || `/rioex/markets/${encoded}`,
+    marketBoard: row.routes?.marketBoard || "/rioex",
+    hero: row.routes?.hero || "/rioex",
+    trade: row.routes?.trade || row.routes?.swap || fallback.swap,
+    pool: row.routes?.pool || fallback.pool,
+    swap: row.routes?.swap || fallback.swap,
+    liquidity: row.routes?.liquidity || fallback.liquidity,
+    explorer: row.routes?.explorer || `/rioexplorer/markets/${encoded}`,
   };
 }
 
-function timeframeMs(mode: TimeframeMode) {
-  if (mode === "5m") return 5 * 60 * 1000;
-  if (mode === "1h") return 60 * 60 * 1000;
-  if (mode === "6h") return 6 * 60 * 60 * 1000;
-  return 24 * 60 * 60 * 1000;
+function inferOrigin(row: ScreenerAuthorityRow, baseSymbol: string, quoteSymbol: string): MarketOrigin {
+  const explicitOrigin = firstText(
+    row.launchSource,
+    row.launch_source,
+    row.launchRail,
+    row.launch_rail,
+    row.assetOrigin,
+    row.asset_origin,
+    row.origin,
+    row.routeSource,
+    row.route_source,
+    row.asset_class,
+  ).toLowerCase();
+
+  if (explicitOrigin.includes("pump")) return "PUMP.live";
+  if (explicitOrigin.includes("prime")) return "Prime";
+  if (explicitOrigin.includes("bridge") || explicitOrigin.includes("ibc") || explicitOrigin.includes("axelar") || explicitOrigin.includes("hyperlane")) return "Bridged";
+  if (explicitOrigin.includes("oracle") || explicitOrigin.includes("reference") || explicitOrigin.includes("offchain") || explicitOrigin.includes("off-chain") || explicitOrigin.includes("rwa")) return "Reference";
+  if (explicitOrigin.includes("native")) return "Native";
+  if (explicitOrigin.includes("stable")) return "Stable";
+  if (explicitOrigin.includes("spo") || explicitOrigin.includes("token")) return "SPO-20";
+
+  const haystack = [
+    row.source,
+    row.class,
+    row.promotion_status,
+    row.displaySymbol,
+    row.display_symbol,
+    row.canonicalSymbol,
+    row.canonical_symbol,
+    row.baseAssetType,
+    row.quoteAssetType,
+    row.asset_0_type,
+    row.asset_1_type,
+    row.origin_chain,
+    row.execution_chain,
+    baseSymbol,
+    quoteSymbol,
+  ]
+    .map((v) => text(v).toLowerCase())
+    .join(" ");
+
+  if (haystack.includes("pump")) return "PUMP.live";
+  if (haystack.includes("prime")) return "Prime";
+  if (haystack.includes("bridge") || haystack.includes("ibc") || haystack.includes("axelar") || haystack.includes("hyperlane")) return "Bridged";
+  if (haystack.includes("oracle") || haystack.includes("reference") || haystack.includes("offchain") || haystack.includes("off-chain") || haystack.includes("rwa")) return "Reference";
+  if ([baseSymbol, quoteSymbol].some((s) => isStableSymbol(s))) return "Stable";
+  if ([baseSymbol, quoteSymbol].some((s) => isRioSymbol(s))) {
+    const other = [baseSymbol, quoteSymbol].find((s) => !isRioSymbol(s)) || "";
+    if (!other || isStableSymbol(other)) return "Native";
+  }
+  if (haystack.includes("spo") || haystack.includes("token")) return "SPO-20";
+  if (haystack.includes("native")) return "Native";
+  return "SPO-20";
+}
+
+function inferReadiness(row: ScreenerAuthorityRow, price: number | null, volume: number | null, txns: number | null): {
+  readiness: MarketReadiness;
+  detail: string;
+  canQuickSwap: boolean;
+} {
+  const liquidityStatus = firstText(row.liquidityStatus, row.liquidity_status).toLowerCase();
+  const volumeStatus = firstText(row.volumeStatus, row.volume_status).toLowerCase();
+  const txnsStatus = firstText(row.txnsStatus, row.txns_status).toLowerCase();
+  const reserveLabel = firstText(row.reserveLabel, row.reserve_label);
+  const reserve0 = toNumber(row.reserve0Amount ?? row.reserve_0_amount);
+  const reserve1 = toNumber(row.reserve1Amount ?? row.reserve_1_amount);
+  const isLive = Boolean(row.isLive ?? row.is_live);
+
+  const hasIndexedReserves =
+    reserveLabel.length > 0 ||
+    liquidityStatus === "seeded_unpriced" ||
+    liquidityStatus.includes("reserve") ||
+    (
+      reserve0 !== null &&
+      reserve1 !== null &&
+      reserve0 > 0 &&
+      reserve1 > 0
+    );
+
+  if (!isLive) {
+    return {
+      readiness: "Pair Indexed",
+      detail: "Pair exists but is not marked live",
+      canQuickSwap: false,
+    };
+  }
+
+  if (liquidityStatus === "no_indexed_liquidity") {
+    return {
+      readiness: "No Liquidity",
+      detail: "No indexed reserves",
+      canQuickSwap: false,
+    };
+  }
+
+  /*
+    Source-of-truth product rule:
+    Pair live + indexed reserves = Route Ready.
+    Snapshots/candles/24h analytics are not required for swap routing.
+  */
+  if (hasIndexedReserves) {
+    if (price && price > 0 && ((volume && volume > 0) || (txns && txns > 0))) {
+      return {
+        readiness: "Trade Ready",
+        detail: "Quote and market activity indexed",
+        canQuickSwap: true,
+      };
+    }
+
+    if (volumeStatus === "pending_snapshots" || txnsStatus === "pending_snapshots") {
+      return {
+        readiness: "Route Ready",
+        detail: "Seeded reserves indexed; analytics snapshots pending",
+        canQuickSwap: true,
+      };
+    }
+
+    return {
+      readiness: "Route Ready",
+      detail: "Seeded reserves indexed; quote route available",
+      canQuickSwap: true,
+    };
+  }
+
+  if (price && price > 0) {
+    return {
+      readiness: "Trade Ready",
+      detail: "Quote available",
+      canQuickSwap: true,
+    };
+  }
+
+  return {
+    readiness: "Awaiting Quote",
+    detail: "Pair indexed; quote unavailable",
+    canQuickSwap: false,
+  };
+}
+
+function originBadgeClass(origin: MarketOrigin) {
+  if (origin === "PUMP.live") return "border-fuchsia-400/25 bg-fuchsia-500/12 text-fuchsia-100";
+  if (origin === "Prime") return "border-cyan-400/25 bg-cyan-500/12 text-cyan-100";
+  if (origin === "SPO-20") return "border-violet-400/25 bg-violet-500/12 text-violet-100";
+  if (origin === "Native") return "border-amber-400/25 bg-amber-500/12 text-amber-100";
+  if (origin === "Stable") return "border-emerald-400/25 bg-emerald-500/12 text-emerald-100";
+  if (origin === "Bridged") return "border-teal-400/25 bg-teal-500/12 text-teal-100";
+  return "border-slate-400/25 bg-slate-500/12 text-slate-100";
+}
+
+function readinessClass(readiness: MarketReadiness) {
+  if (readiness === "Trade Ready") return "border-emerald-400/25 bg-emerald-500/12 text-emerald-100";
+  if (readiness === "Route Ready") return "border-cyan-400/25 bg-cyan-500/12 text-cyan-100";
+  if (readiness === "Awaiting Quote") return "border-amber-400/25 bg-amber-500/12 text-amber-100";
+  if (readiness === "Awaiting Snapshots") return "border-yellow-400/25 bg-yellow-500/12 text-yellow-100";
+  if (readiness === "No Liquidity") return "border-rose-400/25 bg-rose-500/12 text-rose-100";
+  return "border-cyan-400/25 bg-cyan-500/12 text-cyan-100";
+}
+
+function Badge({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span className={cx("inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]", className)}>
+      {children}
+    </span>
+  );
+}
+
+function PairLogos({ row }: { row: MarketRow }) {
+  const left = row.baseSymbol || row.displaySymbol.slice(0, 1);
+  const right = row.quoteSymbol || row.displaySymbol.slice(0, 1);
+  return (
+    <div className="flex -space-x-2">
+      {row.baseLogoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={row.baseLogoUrl} alt={left} className="h-9 w-9 rounded-full border border-white/10 bg-black object-cover" />
+      ) : (
+        <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-[#242733] text-xs font-black text-white">
+          {left.slice(0, 1)}
+        </div>
+      )}
+      {row.quoteLogoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={row.quoteLogoUrl} alt={right} className="h-9 w-9 rounded-full border border-white/10 bg-black object-cover" />
+      ) : (
+        <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-[#171a24] text-xs font-black text-white">
+          {right.slice(0, 1)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
+      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</div>
+      <div className="mt-1 text-lg font-black text-white">{value}</div>
+    </div>
+  );
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, { cache: "no-store" });
   const raw = await response.text();
-
-  let json: any = null;
+  let json: any;
   try {
     json = raw ? JSON.parse(raw) : null;
   } catch {
     throw new Error(`Route returned non-JSON (${response.status})`);
   }
-
-  if (!response.ok || (json && json.ok === false)) {
+  if (!response.ok || json?.ok === false) {
     throw new Error(json?.error || `Request failed: ${response.status}`);
   }
-
   return json as T;
 }
 
-function DropdownFilter<T extends string>({
-  label,
-  value,
-  displayLabel,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: T;
-  displayLabel?: string;
-  options: Array<{ value: T; label: string }>;
-  onChange: (next: T) => void;
-}) {
-  return (
-    <details className="group relative z-40">
-      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/[0.10]">
-        <span className="text-[11px] uppercase tracking-[0.18em] text-slate-300">
-          {label}
-        </span>
-        {displayLabel ? <span className="text-white">{displayLabel}</span> : null}
-        <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
-      </summary>
-
-      <div className="absolute left-0 top-[calc(100%+10px)] z-[90] min-w-[220px] rounded-2xl border border-white/10 bg-[#0d1220] p-2 shadow-[0_16px_60px_rgba(0,0,0,0.45)]">
-        {options.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${
-              option.value === value
-                ? "bg-white/[0.10] text-white"
-                : "text-slate-300 hover:bg-white/[0.06]"
-            }`}
-          >
-            <span>{option.label}</span>
-            {option.value === value ? (
-              <span className="text-[10px] uppercase tracking-[0.18em] text-cyan-200">
-                Active
-              </span>
-            ) : null}
-          </button>
-        ))}
-      </div>
-    </details>
-  );
-}
-
-function StatusPill({ label }: { label: string }) {
-  const tone =
-    label === "Live"
-      ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-200"
-      : label === "Canonical"
-      ? "border-violet-400/20 bg-violet-500/10 text-violet-200"
-      : label === "Promoted"
-      ? "border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-200"
-      : label === "Candidate"
-      ? "border-amber-400/20 bg-amber-500/10 text-amber-100"
-      : label === "RioEx"
-      ? "border-cyan-400/20 bg-cyan-500/10 text-cyan-200"
-      : "border-white/10 bg-white/[0.06] text-slate-200";
-
-  return (
-    <span
-      className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.20em] ${tone}`}
-    >
-      {label}
-    </span>
-  );
-}
-
-function PairMarks({
-  logo0,
-  logo1,
-  fallback0,
-  fallback1,
-}: {
-  logo0: string | null;
-  logo1: string | null;
-  fallback0: string;
-  fallback1: string;
-}) {
-  return (
-    <div className="flex -space-x-2">
-      {logo0 ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={logo0}
-          alt={fallback0}
-          className="h-8 w-8 rounded-full border border-white/10 bg-black/20 object-cover"
-        />
-      ) : (
-        <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/10 text-[10px] font-semibold text-white">
-          {fallback0.slice(0, 1)}
-        </div>
-      )}
-
-      {logo1 ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={logo1}
-          alt={fallback1}
-          className="h-8 w-8 rounded-full border border-white/10 bg-black/20 object-cover"
-        />
-      ) : (
-        <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/10 text-[10px] font-semibold text-white">
-          {fallback1.slice(0, 1)}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CompactStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-      <div className="text-[10px] uppercase tracking-[0.20em] text-slate-500">
-        {label}
-      </div>
-      <div className="mt-2 text-2xl font-semibold text-white">{value}</div>
-    </div>
-  );
+function normalizeRows(response: ScreenerAuthorityResponse): ScreenerAuthorityRow[] {
+  const rows = response.markets || response.rows || response.items || response.pairs || [];
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const key = firstText(row.pairAddress, row.pair_address, row.pairKey, row.pair_key);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export default function RioDexMarketsPage() {
-  const [screenerRows, setScreenerRows] = useState<ScreenerAuthorityRow[]>([]);
-  const [screenerSummary, setScreenerSummary] = useState<ScreenerSummary | null>(null);
+  const [rawRows, setRawRows] = useState<ScreenerAuthorityRow[]>([]);
+  const [summary, setSummary] = useState<ScreenerSummary | null>(null);
+  const [source, setSource] = useState<string>("");
+  const [warning, setWarning] = useState<string>("");
   const [registryMap, setRegistryMap] = useState(() => buildTokenRegistryMap([]));
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [query, setQuery] = useState("");
-  const [discovery, setDiscovery] = useState<DiscoveryFilter>("trending");
-  const [classFilter, setClassFilter] = useState<ClassFilter>("all_classes");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all_statuses");
-  const [sideMode, setSideMode] = useState<SideMode>(null);
-  const [ranking, setRanking] = useState<RankingMode>("liquidity");
+  const [quickSwapQuery, setQuickSwapQuery] = useState("");
+  const [originFilter, setOriginFilter] = useState<OriginFilter>("all");
+  const [readinessFilter, setReadinessFilter] = useState<ReadinessFilter>("all");
   const [timeframe, setTimeframe] = useState<TimeframeMode>("24h");
+  const [ranking, setRanking] = useState<RankingMode>("liquidity");
+  const [sideMode, setSideMode] = useState<SideMode>("quick_swap");
+  const [tradeSide, setTradeSide] = useState<TradeSide>("buy");
+  const [amount, setAmount] = useState("100");
+  const [selectedPair, setSelectedPair] = useState<string | null>(null);
   const [watchlist, setWatchlist] = useState<string[]>([]);
 
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(WATCHLIST_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) setWatchlist(parsed.filter(Boolean));
-      }
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) setWatchlist(parsed.filter(Boolean));
     } catch {
-      // noop
+      // local-only preference; ignore malformed storage
     }
   }, []);
 
@@ -494,569 +715,444 @@ export default function RioDexMarketsPage() {
       try {
         setLoading(true);
         setError(null);
-
-        const screenerUrl = `/api/riodex/screener?timeframe=${encodeURIComponent(
-          timeframe
-        )}&rankBy=${encodeURIComponent(ranking)}&limit=500`;
-
-        const screenerRes = await fetchJson<ScreenerAuthorityResponse>(screenerUrl);
-
+        const payload = await fetchJson<ScreenerAuthorityResponse>(
+          `/api/riodex/screener?timeframe=${encodeURIComponent(timeframe)}&rankBy=${encodeURIComponent(ranking)}&limit=500`,
+        );
         if (!active) return;
 
-        const nextRows = screenerRes?.rows || [];
-        setScreenerRows(nextRows);
-        setScreenerSummary(screenerRes?.summary || null);
+        const nextRows = normalizeRows(payload);
+        setRawRows(nextRows);
+        setSummary(payload.summary || payload.stats || null);
+        setSource(
+          typeof payload.source === "string"
+            ? payload.source
+            : payload.source
+              ? JSON.stringify(payload.source)
+              : ""
+        );
+        setWarning(payload.warning || "");
 
         const assetIds = Array.from(
           new Set(
             nextRows
               .flatMap((row) => [
-                row.baseAssetId || row.base_asset_id || "",
-                row.quoteAssetId || row.quote_asset_id || "",
+                firstText(row.baseAssetId, row.base_asset_id),
+                firstText(row.quoteAssetId, row.quote_asset_id),
               ])
-              .filter(Boolean)
-          )
+              .filter(Boolean),
+          ),
         );
 
-        const registryItems = assetIds.length
-          ? await getRioDexTokenRegistryBatch(assetIds)
-          : [];
-
+        const registryItems = assetIds.length ? await getRioDexTokenRegistryBatch(assetIds) : [];
         if (!active) return;
-
         setRegistryMap(buildTokenRegistryMap(registryItems));
-      } catch (e: any) {
+      } catch (err: any) {
         if (!active) return;
-        setError(e?.message || "Failed to load screener state");
-        setScreenerRows([]);
-        setScreenerSummary(null);
+        setError(err?.message || "Failed to load Spherio Screener.");
+        setRawRows([]);
+        setSummary(null);
       } finally {
         if (active) setLoading(false);
       }
     }
 
-    load();
-
+    void load();
     return () => {
       active = false;
     };
   }, [timeframe, ranking]);
 
   const rows = useMemo<MarketRow[]>(() => {
-    return screenerRows.map((row) => {
-      const pairAddress = row.pairAddress || row.pair_address;
-      const displaySymbol = row.displaySymbol || row.display_symbol;
-      const baseAssetId = row.baseAssetId || row.base_asset_id;
-      const quoteAssetId = row.quoteAssetId || row.quote_asset_id;
-      const isCanonical = row.isCanonical ?? row.is_canonical;
-      const isLive = row.isLive ?? row.is_live;
-
-      const pair: PairMeta = {
-        pair_address: pairAddress,
-        factory_address: row.factory_address ?? null,
-        pair_key: pairAddress,
-        display_symbol: displaySymbol,
-        fee_bps: row.feeBps ?? null,
-        is_canonical: isCanonical,
-        is_live: isLive,
-        created_time:
-          row.age_seconds !== null && row.age_seconds !== undefined
-            ? new Date(Date.now() - row.age_seconds * 1000).toISOString()
-            : null,
-        asset_0_id: baseAssetId,
-        asset_1_id: quoteAssetId,
-      };
-
-      const pairLabel =
-        displaySymbol ||
-        (baseAssetId && quoteAssetId
-          ? getRegistryPairLabel(registryMap, baseAssetId, quoteAssetId)
-          : pairDisplayLabel(pair));
-
-      const price = toNumber(row.price);
-      const liquidityUsd = toNumber(row.liquidityUsd ?? row.liquidity_quote);
-      const windowVolume = toNumber(row.volume_24h);
-      const windowTxns = Math.max(0, Math.floor(toNumber(row.txns_24h)));
-      const ageDays =
-        row.age_seconds !== null && row.age_seconds !== undefined
-          ? Math.max(0, Math.floor(Number(row.age_seconds) / 86400))
-          : null;
-
-      const classLabel: MarketRow["classLabel"] = isCanonical
-        ? "Canonical"
-        : "Spherio Live";
-
-      const statuses: MarketRow["statuses"] = [];
-      if (isLive) statuses.push("Live");
-      if (isCanonical) statuses.push("Canonical");
-      if (!isLive || liquidityUsd <= 0) statuses.push("Review");
-      if ((row.promotion_status || "").toLowerCase() === "candidate") statuses.push("Candidate");
-      if (["promoted", "rioex_listed"].includes((row.promotion_status || "").toLowerCase())) statuses.push("Promoted");
-      if (statuses.includes("Candidate") || statuses.includes("Promoted") || isCanonical) {
-        statuses.push("RioEx");
-      }
-      const uniqueStatuses = Array.from(new Set(statuses)) as MarketRow["statuses"];
-
+    return rawRows.map((row, index) => {
+      const pairAddress = firstText(row.pairAddress, row.pair_address);
+      const pairKey = firstText(row.pairKey, row.pair_key) || null;
+      const baseAssetId = firstText(row.baseAssetId, row.base_asset_id);
+      const quoteAssetId = firstText(row.quoteAssetId, row.quote_asset_id);
+      const registryPairLabel = baseAssetId && quoteAssetId ? getRegistryPairLabel(registryMap, baseAssetId, quoteAssetId) : "";
+      const rawDisplaySymbol = firstText(row.displaySymbol, row.display_symbol, row.canonicalSymbol, row.canonical_symbol, registryPairLabel);
+      const parsedSymbols = parsePairSymbols(rawDisplaySymbol);
+      const baseSymbol = firstText(row.baseSymbol, row.baseDisplayName) || fallbackSymbolFromAssetId(baseAssetId, parsedSymbols?.left);
+      const quoteSymbol = firstText(row.quoteSymbol, row.quoteDisplayName) || fallbackSymbolFromAssetId(quoteAssetId, parsedSymbols?.right);
+      const displaySymbol =
+        baseSymbol && quoteSymbol
+          ? `${baseSymbol} / ${quoteSymbol}`
+          : preferredPairLabel(baseSymbol, quoteSymbol, rawDisplaySymbol || `${baseSymbol} / ${quoteSymbol}`);
+      const canonicalSymbol = firstText(row.canonicalSymbol, row.canonical_symbol) || displaySymbol.replace(/\s+/g, "");
+      const rawPrice = toNumber(row.price);
+      const marketCap = toNumber(row.market_cap);
+      const fullyDilutedValue = toNumber(row.fully_diluted_value);
+      const fdvReferenceValue = toNumber(row.fdvReferenceValue ?? row.fdv_reference_value);
+      const fdvReferenceAsset = firstText(row.fdvReferenceAsset, row.fdv_reference_asset) || null;
+      const priceMoveSource = firstText(row.priceChangeSource, row.price_change_source) || null;
+      const trendStatus = firstText(row.trendStatus, row.trend_status) || null;
+      const liquidityUsd = toNumber(row.liquidityUsd ?? row.liquidity_usd ?? row.liquidity_quote);
+      const volume24h = toNumber(row.volume24h ?? row.volume_24h);
+      const txns24h = toNumber(row.txns24h ?? row.txns_24h);
+      const reserveLabel = firstText(row.reserveLabel, row.reserve_label) || null;
+      const liquidityStatus = firstText(row.liquidityStatus, row.liquidity_status);
+      const liquidityLabel = firstText(row.liquidityLabel, row.liquidity_label) || (reserveLabel ? "Seeded / Reserves indexed" : liquidityUsd !== null ? money(liquidityUsd) : "USD pending");
+      const isLive = Boolean(row.isLive ?? row.is_live);
+      const isCanonical = Boolean(row.isCanonical ?? row.is_canonical);
+      const origin = inferOrigin(row, baseSymbol, quoteSymbol);
+      const readiness = inferReadiness(row, rawPrice, volume24h, txns24h);
+      const routes = buildRoutes(row, pairAddress);
+      const ageSeconds = toNumber(row.age_seconds);
       const alertFlags: string[] = [];
-      if (!isLive) alertFlags.push("Not live");
-      if (liquidityUsd <= 0) alertFlags.push("No indexed liquidity");
-      if (windowVolume <= 0) alertFlags.push(`No ${timeframe} volume`);
-      if (windowTxns <= 0) alertFlags.push(`No ${timeframe} activity`);
-      if (ageDays !== null && ageDays <= 7) alertFlags.push("New pair");
+      if (warning) alertFlags.push(warning.replaceAll("_", " "));
+      if (!isLive) alertFlags.push("Pair not marked live");
+      if (liquidityStatus === "seeded_unpriced") alertFlags.push("Seeded; USD valuation pending");
+      if (firstText(row.volumeStatus, row.volume_status) === "pending_snapshots") alertFlags.push("Volume snapshots pending");
+      if (firstText(row.txnsStatus, row.txns_status) === "pending_snapshots") alertFlags.push("TXN snapshots pending");
 
       return {
-        pair,
+        rank: Number(row.rank || index + 1),
         pairAddress,
-        symbol: pairLabel,
-        logo0:
-          row.baseLogoUrl ||
-          (baseAssetId ? getRegistryLogoUrl(registryMap, baseAssetId) || null : null),
-        logo1:
-          row.quoteLogoUrl ||
-          (quoteAssetId ? getRegistryLogoUrl(registryMap, quoteAssetId) || null : null),
-        classLabel,
-        price,
+        pairKey,
+        displaySymbol,
+        canonicalSymbol,
+        baseAssetId,
+        quoteAssetId,
+        baseSymbol,
+        quoteSymbol,
+        baseLogoUrl: row.baseLogoUrl || (baseAssetId ? getRegistryLogoUrl(registryMap, baseAssetId) || null : null),
+        quoteLogoUrl: row.quoteLogoUrl || (quoteAssetId ? getRegistryLogoUrl(registryMap, quoteAssetId) || null : null),
+        baseAssetType: row.baseAssetType || row.asset_0_type || null,
+        quoteAssetType: row.quoteAssetType || row.asset_1_type || null,
+        origin,
+        readiness: readiness.readiness,
+        readinessDetail: readiness.detail,
+        sourceDetail: firstText(row.source, source, "indexer"),
+        price: rawPrice,
+        priceLabel: priceLabel(rawPrice),
+        marketCap,
+        marketCapLabel: marketCap !== null ? money(marketCap) : "Pending",
+        fullyDilutedValue,
+        fdvLabel: fullyDilutedValue !== null ? money(fullyDilutedValue) : "Pending",
+        fdvReferenceValue,
+        fdvReferenceAsset,
+        fdvReferenceLabel: fdvReferenceLabel(fdvReferenceValue, fdvReferenceAsset),
+        priceMoveLabel: priceMoveLabelFromSource(priceMoveSource),
+        priceMoveSource,
+        trendStatus,
+        trendLabel: trendLabel(trendStatus),
         liquidityUsd,
-        windowVolume,
-        windowTxns,
-        ageDays,
-        lastActivity:
-          row.lastSwapTime ||
-          row.last_trade_time ||
-          row.last_liquidity_time ||
-          null,
-        mcap: row.market_cap !== null && row.market_cap !== undefined ? toNumber(row.market_cap) : null,
-        changePct: null,
-        statuses: uniqueStatuses,
+        liquidityLabel,
+        reserveLabel,
+        volume24h,
+        volumeLabel: firstText(row.volumeStatus, row.volume_status) === "pending_snapshots" || !volume24h ? "Snapshots pending" : money(volume24h),
+        txns24h,
+        txnsLabel: firstText(row.txnsStatus, row.txns_status) === "pending_snapshots" || !txns24h ? "Snapshots pending" : String(Math.floor(txns24h)),
+        ageLabel: ageLabelFromSeconds(ageSeconds),
+        isLive,
+        isCanonical,
+        feeBps: toNumber(row.feeBps ?? row.fee_bps),
         alertFlags,
-        feeBps: row.feeBps ?? null,
-        feePolicy: row.feePolicy ?? null,
-        routes: row.routes ?? buildAuthoritativeSurfaceRoutes(pairAddress),
-        truthSource: row.source === "rioex_pairs_registry_table" ? "authoritative_registry" : "authoritative_screener",
-        lastSwapRef: row.lastSwapTxHash ?? null,
+        routes,
+        canQuickSwap: readiness.canQuickSwap,
+        truthSource: firstText(row.source, source, "indexer"),
+        raw: row,
       };
     });
-  }, [screenerRows, registryMap, timeframe]);
-
-  const livePools =
-    screenerSummary?.live_pools ??
-    rows.filter((row) => row.statuses.includes("Live")).length;
-  const canonicalCount =
-    screenerSummary?.canonical_pools ??
-    rows.filter((row) => row.statuses.includes("Canonical")).length;
-  const volumeTotal =
-    screenerSummary?.total_volume_24h ??
-    rows.reduce((sum, row) => sum + row.windowVolume, 0);
-  const txnsTotal =
-    screenerSummary?.total_txns_24h ??
-    rows.reduce((sum, row) => sum + row.windowTxns, 0);
-  const candidateCount =
-    screenerSummary?.candidate_count ??
-    rows.filter((row) => row.statuses.includes("Candidate")).length;
-  const promotedCount =
-    screenerSummary?.promoted_count ??
-    rows.filter((row) => row.statuses.includes("Promoted")).length;
+  }, [rawRows, registryMap, source, warning]);
 
   const filteredRows = useMemo(() => {
-    let next = [...rows];
+    const q = query.trim().toLowerCase();
+    let next = rows.filter((row) => {
+      const matchesQuery = !q || [
+        row.displaySymbol,
+        row.canonicalSymbol,
+        row.baseSymbol,
+        row.quoteSymbol,
+        row.baseAssetId,
+        row.quoteAssetId,
+        row.pairAddress,
+        row.pairKey || "",
+        row.origin,
+      ].some((field) => field.toLowerCase().includes(q));
 
-    if (query.trim()) {
-      const q = query.trim().toLowerCase();
-      next = next.filter((row) => {
-        return (
-          row.symbol.toLowerCase().includes(q) ||
-          row.pairAddress.toLowerCase().includes(q) ||
-          (row.pair.asset_0_id || "").toLowerCase().includes(q) ||
-          (row.pair.asset_1_id || "").toLowerCase().includes(q)
-        );
-      });
-    }
+      const matchesOrigin =
+        originFilter === "all" ||
+        (originFilter === "pump" && row.origin === "PUMP.live") ||
+        (originFilter === "prime" && row.origin === "Prime") ||
+        (originFilter === "spo20" && row.origin === "SPO-20") ||
+        (originFilter === "native" && row.origin === "Native") ||
+        (originFilter === "stable" && row.origin === "Stable") ||
+        (originFilter === "bridged" && row.origin === "Bridged") ||
+        (originFilter === "reference" && row.origin === "Reference");
 
-    if (classFilter !== "all_classes") {
-      next = next.filter((row) => {
-        if (classFilter === "canonical") return row.classLabel === "Canonical";
-        if (classFilter === "spherio_live") return row.classLabel === "Spherio Live";
-        if (classFilter === "reference") return row.classLabel === "Reference";
-        if (classFilter === "multichain") return row.classLabel === "Multichain";
-        if (classFilter === "bridged") return row.classLabel === "Bridged";
-        return true;
-      });
-    }
+      const matchesReadiness =
+        readinessFilter === "all" ||
+        (readinessFilter === "route_ready" && ["Route Ready", "Trade Ready"].includes(row.readiness)) ||
+        (readinessFilter === "trade_ready" && row.readiness === "Trade Ready") ||
+        (readinessFilter === "awaiting_quote" && row.readiness === "Awaiting Quote") ||
+        (readinessFilter === "reserves_indexed" && ["Route Ready", "Reserves Indexed", "Awaiting Snapshots", "Trade Ready"].includes(row.readiness)) ||
+        (readinessFilter === "awaiting_snapshots" && row.readiness === "Awaiting Snapshots") ||
+        (readinessFilter === "no_liquidity" && row.readiness === "No Liquidity");
 
-    if (statusFilter !== "all_statuses") {
-      next = next.filter((row) => {
-        if (statusFilter === "live") return row.statuses.includes("Live");
-        if (statusFilter === "canonical") return row.statuses.includes("Canonical");
-        if (statusFilter === "candidate") return row.statuses.includes("Candidate");
-        if (statusFilter === "review") return row.statuses.includes("Review");
-        if (statusFilter === "promoted") return row.statuses.includes("Promoted");
-        if (statusFilter === "rioex") return row.statuses.includes("RioEx");
-        return true;
-      });
-    }
+      const matchesSide =
+        sideMode !== "watchlist" || watchlist.includes(row.pairAddress);
 
-    if (discovery === "candidates") {
-      next = next.filter((row) => row.statuses.includes("Candidate"));
-    } else if (discovery === "promoted") {
-      next = next.filter((row) => row.statuses.includes("Promoted"));
-    } else if (discovery === "new_pairs") {
-      next = next.filter((row) => row.ageDays !== null && row.ageDays <= 7);
-    }
+      return matchesQuery && matchesOrigin && matchesReadiness && matchesSide;
+    });
 
-    if (sideMode === "watchlist") {
-      next = next.filter((row) => watchlist.includes(row.pairAddress));
-    }
-
-    if (sideMode === "alerts") {
-      next = next.filter((row) => row.alertFlags.length > 0);
-    }
-
-    if (sideMode === "new_pairs") {
-      next = next.filter((row) => row.ageDays !== null && row.ageDays <= 7);
-    }
-
-    const sortMode =
-      sideMode === "new_pairs"
-        ? "new"
-        : sideMode === "gainers_losers"
-        ? "mcap"
-        : sideMode === "multicharts"
-        ? "volume"
-        : discovery === "new_pairs"
-        ? "new"
-        : discovery === "liquidity"
-        ? "liquidity"
-        : discovery === "volume"
-        ? "volume"
-        : discovery === "activity"
-        ? "txns"
-        : discovery === "trending"
-        ? "liquidity"
-        : ranking;
-
-    next.sort((a, b) => {
-      if (sideMode === "gainers_losers") {
-        return Math.abs(b.changePct || 0) - Math.abs(a.changePct || 0);
-      }
-      if (sortMode === "liquidity") return b.liquidityUsd - a.liquidityUsd;
-      if (sortMode === "volume") return b.windowVolume - a.windowVolume;
-      if (sortMode === "txns") return b.windowTxns - a.windowTxns;
-      if (sortMode === "mcap") return (b.mcap || 0) - (a.mcap || 0);
-      if (sortMode === "new") {
-        return (a.ageDays ?? Number.MAX_SAFE_INTEGER) - (b.ageDays ?? Number.MAX_SAFE_INTEGER);
-      }
+    next = [...next].sort((a, b) => {
+      if (ranking === "liquidity") return (b.liquidityUsd ?? -1) - (a.liquidityUsd ?? -1);
+      if (ranking === "volume") return (b.volume24h ?? -1) - (a.volume24h ?? -1);
+      if (ranking === "txns") return (b.txns24h ?? -1) - (a.txns24h ?? -1);
+      if (ranking === "mcap") return (toNumber(b.raw.market_cap) ?? -1) - (toNumber(a.raw.market_cap) ?? -1);
+      if (ranking === "new") return a.rank - b.rank;
       return 0;
     });
 
     return next;
-  }, [rows, query, classFilter, statusFilter, discovery, sideMode, ranking, watchlist]);
+  }, [rows, query, originFilter, readinessFilter, sideMode, watchlist, ranking]);
+
+  const quickSwapRows = useMemo(() => {
+    const q = quickSwapQuery.trim().toLowerCase();
+    if (!q) return rows.slice(0, 8);
+    return rows
+      .filter((row) => [row.displaySymbol, row.canonicalSymbol, row.baseSymbol, row.quoteSymbol, row.pairAddress, row.baseAssetId, row.quoteAssetId, row.origin].some((field) => field.toLowerCase().includes(q)))
+      .slice(0, 8);
+  }, [rows, quickSwapQuery]);
+
+  const selected = useMemo(() => {
+    return rows.find((row) => row.pairAddress === selectedPair) || filteredRows[0] || rows[0] || null;
+  }, [rows, filteredRows, selectedPair]);
+
+  useEffect(() => {
+    if (!selectedPair && rows[0]) setSelectedPair(rows[0].pairAddress);
+  }, [rows, selectedPair]);
+
+  const liveMarkets = summary?.live_pools ?? summary?.livePools ?? rows.filter((row) => row.isLive).length;
+  const tradeReady = rows.filter((row) => row.readiness === "Trade Ready").length;
+  const reservesIndexed = rows.filter((row) => ["Route Ready", "Reserves Indexed", "Awaiting Snapshots", "Trade Ready"].includes(row.readiness)).length;
+  const awaitingSnapshots = rows.filter((row) => row.readiness === "Awaiting Snapshots").length;
+  const totalVolume = summary?.total_volume_24h ?? summary?.volume24h ?? rows.reduce((sum, row) => sum + (row.volume24h || 0), 0);
+  const totalTxns = summary?.total_txns_24h ?? summary?.txns24h ?? rows.reduce((sum, row) => sum + (row.txns24h || 0), 0);
 
   function toggleWatchlist(pairAddress: string) {
     setWatchlist((current) =>
       current.includes(pairAddress)
         ? current.filter((item) => item !== pairAddress)
-        : [...current, pairAddress]
+        : [...current, pairAddress],
     );
   }
 
-  const discoveryLabelMap: Record<DiscoveryFilter, string> = {
-    trending: "Trending",
-    new_pairs: "New Pairs",
-    liquidity: "Liquidity",
-    volume: "Volume",
-    activity: "Activity",
-    candidates: "Candidates",
-    promoted: "Promoted",
-  };
-
-  const featured = filteredRows[0]
+  const featured = selected
     ? {
-        displaySymbol: filteredRows[0].symbol,
-        liquidityUsd: filteredRows[0].liquidityUsd,
-        feeBps: filteredRows[0].feeBps,
-        isCanonical: filteredRows[0].statuses.includes("Canonical"),
-        isLive: filteredRows[0].statuses.includes("Live"),
-        routes: filteredRows[0].routes,
+        displaySymbol: selected.displaySymbol,
+        liquidityUsd: selected.liquidityUsd,
+        feeBps: selected.feeBps,
+        isCanonical: selected.isCanonical,
+        isLive: selected.isLive,
+        routes: selected.routes,
       }
     : null;
 
-  const screenerFootnote =
-    "RioDex Screener now consumes the canonical market fields directly from /api/riodex/screener. Compatibility fields remain in the backend only to avoid breaking the larger UI migration while every surface moves to the same authoritative market language.";
-
   return (
-    <div className="min-h-[calc(100vh-64px)] bg-[radial-gradient(circle_at_15%_10%,rgba(164,114,255,0.22),transparent_24%),radial-gradient(circle_at_84%_12%,rgba(255,205,127,0.10),transparent_18%),linear-gradient(180deg,#06070E_0%,#090B12_44%,#05070D_100%)] text-white">
-      <div className="mx-auto max-w-[1540px] px-6 pb-12 pt-8">
-        <ExchangeSurfaceNav
-          product="riodex"
-          activeKey="screener"
-          featured={featured}
-          title="RioDex Screener"
-          subtitle="Execution discovery surface for Spherio market objects. Screener belongs to RioDex and now consumes canonical pair identity, liquidity, fee policy, live status, and routes directly from the authoritative Screener contract."
-        />
-
-        <div className="grid gap-6 xl:grid-cols-[0.32fr_1fr]">
-          <aside className={`${shell("panel")} p-4`}>
-            <div className="text-[11px] font-extrabold uppercase tracking-[0.30em] text-slate-400">
-              Operator Rail
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <button
-                type="button"
-                onClick={() => setSideMode(sideMode === "watchlist" ? null : "watchlist")}
-                className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
-                  sideMode === "watchlist"
-                    ? "border-cyan-400/20 bg-cyan-400/10 text-cyan-100"
-                    : "border-white/10 bg-white/[0.05] text-slate-200 hover:bg-white/[0.08]"
-                }`}
-              >
-                <Star className="h-4 w-4" />
-                <span>Watchlist</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSideMode(sideMode === "alerts" ? null : "alerts")}
-                className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
-                  sideMode === "alerts"
-                    ? "border-amber-400/20 bg-amber-400/10 text-amber-100"
-                    : "border-white/10 bg-white/[0.05] text-slate-200 hover:bg-white/[0.08]"
-                }`}
-              >
-                <Bell className="h-4 w-4" />
-                <span>Alerts</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSideMode(sideMode === "multicharts" ? null : "multicharts")}
-                className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
-                  sideMode === "multicharts"
-                    ? "border-violet-400/20 bg-violet-400/10 text-violet-100"
-                    : "border-white/10 bg-white/[0.05] text-slate-200 hover:bg-white/[0.08]"
-                }`}
-              >
-                <CandlestickChart className="h-4 w-4" />
-                <span>Multicharts</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSideMode(sideMode === "new_pairs" ? null : "new_pairs")}
-                className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
-                  sideMode === "new_pairs"
-                    ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-100"
-                    : "border-white/10 bg-white/[0.05] text-slate-200 hover:bg-white/[0.08]"
-                }`}
-              >
-                <Sparkles className="h-4 w-4" />
-                <span>New Pairs</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setSideMode(sideMode === "gainers_losers" ? null : "gainers_losers")
-                }
-                className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
-                  sideMode === "gainers_losers"
-                    ? "border-fuchsia-400/20 bg-fuchsia-400/10 text-fuchsia-100"
-                    : "border-white/10 bg-white/[0.05] text-slate-200 hover:bg-white/[0.08]"
-                }`}
-              >
-                <TrendingUp className="h-4 w-4" />
-                <span>Gainers &amp; Losers</span>
-              </button>
-            </div>
-
-            <div className="mt-6 border-t border-white/10 pt-5">
-              <div className="text-[11px] uppercase tracking-[0.20em] text-slate-500">
-                Watchlist
-              </div>
-              <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-slate-300">
-                {watchlist.length
-                  ? `${watchlist.length} tracked pool${watchlist.length === 1 ? "" : "s"} saved on this device.`
-                  : "No tracked pools yet. Star any row below to populate your watchlist."}
-              </div>
-            </div>
-          </aside>
-
-          <main>
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div className="text-[12px] font-extrabold uppercase tracking-[0.34em] text-slate-300">
-                  RioDex Screener
-                </div>
-                <h1 className="mt-2 text-5xl font-semibold tracking-tight text-white">
-                  Discovery &amp; Qualification Terminal
-                </h1>
-                <p className="mt-4 max-w-4xl text-lg leading-8 text-slate-300">
-                  Institutional discovery surface for Spherio market objects.
-                  Identity, liquidity, activity, and routing resolve from indexer
-                  truth and token-registry truth.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  href={RIODEX_HOME_ROUTE}
-                  className="rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.10]"
-                >
-                  Back to RioDex
-                </Link>
-                <Link
-                  href={RIODEX_SWAP_ROUTE}
-                  className="rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.10]"
-                >
-                  Swap
-                </Link>
-                <Link
-                  href={RIODEX_LIQUIDITY_ROUTE}
-                  className="rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.10]"
-                >
-                  Liquidity
-                </Link>
-              </div>
-            </div>
-
-            {error ? (
-              <div className="mt-6 rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4 text-sm text-amber-100">
-                {error}
-              </div>
-            ) : null}
-
-            <div className="mt-6 grid gap-4 xl:grid-cols-[1.45fr_0.7fr]">
-              <div className={`${shell("hero")} relative z-30 overflow-visible p-4`}>
-                <div className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-slate-400">
-                  Search &amp; Filters
-                </div>
-
-                <div className="mt-4 relative">
-                  <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                  <input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search pool, asset, address"
-                    className="w-full rounded-2xl border border-white/10 bg-white/[0.06] py-4 pl-11 pr-4 text-sm text-white outline-none placeholder:text-slate-500"
-                  />
-                </div>
-
-                <div className="mt-5 grid gap-3 md:grid-cols-3">
-                  <DropdownFilter
-                    label="DISCOVERY"
-                    value={discovery}
-                    displayLabel={discoveryLabelMap[discovery]}
-                    options={[
-                      { value: "trending", label: "Trending" },
-                      { value: "new_pairs", label: "New Pairs" },
-                      { value: "liquidity", label: "Liquidity" },
-                      { value: "volume", label: "Volume" },
-                      { value: "activity", label: "Activity" },
-                      { value: "candidates", label: "Candidates" },
-                      { value: "promoted", label: "Promoted" },
-                    ]}
-                    onChange={setDiscovery}
-                  />
-
-                  <DropdownFilter
-                    label="CLASS"
-                    value={classFilter}
-                    options={[
-                      { value: "all_classes", label: "All Classes" },
-                      { value: "canonical", label: "Canonical" },
-                      { value: "spherio_live", label: "Spherio Live" },
-                      { value: "multichain", label: "Multichain" },
-                      { value: "bridged", label: "Bridged" },
-                      { value: "reference", label: "Reference" },
-                    ]}
-                    onChange={setClassFilter}
-                  />
-
-                  <DropdownFilter
-                    label="STATUS"
-                    value={statusFilter}
-                    options={[
-                      { value: "all_statuses", label: "All Statuses" },
-                      { value: "live", label: "Live" },
-                      { value: "canonical", label: "Canonical" },
-                      { value: "candidate", label: "Candidate" },
-                      { value: "review", label: "Review" },
-                      { value: "promoted", label: "Promoted" },
-                      { value: "rioex", label: "RioEx" },
-                    ]}
-                    onChange={setStatusFilter}
-                  />
-                </div>
-
-                <div className="mt-5 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
-                  <CompactStat label="Live Pools" value={String(livePools)} />
-                  <CompactStat label="Canonical" value={String(canonicalCount)} />
-                  <CompactStat
-                    label={`${timeframe.toUpperCase()} Volume`}
-                    value={volumeTotal > 0 ? formatMoney(volumeTotal) : "—"}
-                  />
-                  <CompactStat label={`${timeframe.toUpperCase()} Txns`} value={String(txnsTotal)} />
-                  <CompactStat label="Candidates" value={String(candidateCount)} />
-                  <CompactStat label="Promoted" value={String(promotedCount)} />
-                </div>
-              </div>
-
-              <div className={`${shell("amber")} p-4`}>
-                <div className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-slate-400">
-                  Institutional Routing
-                </div>
-
-                <div className="mt-4 space-y-3">
-                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm leading-7 text-slate-200">
-                    Live Spherio pools route into{" "}
-                    <span className="font-semibold text-white">Swap</span>,{" "}
-                    <span className="font-semibold text-white">Liquidity</span>, and{" "}
-                    <span className="font-semibold text-white">Pool</span>.
+    <div className="min-h-[calc(100vh-64px)] bg-[#07080d] text-white">
+      <div className="mx-auto max-w-[1760px] px-4 pb-10 pt-6">
+        <div className="grid gap-4">
+          <main className="min-w-0">
+            <section className={panel("overflow-hidden")}> 
+              <div className="border-b border-white/10 bg-[linear-gradient(180deg,rgba(24,29,44,0.95),rgba(13,15,24,0.95))] p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <div className="text-[11px] font-black uppercase tracking-[0.28em] text-cyan-200">RioDex</div>
+                    <h1 className="mt-2 text-5xl font-black tracking-tight text-white">Screener</h1>
+                    <p className="mt-2 text-xl font-black text-slate-100">Market discovery</p>
+                    <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">
+                      Source-of-truth market discovery for every Spherio asset class: PUMP.live, Prime, SPO-20, native, stable, bridged, and reference assets.
+                    </p>
                   </div>
-                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm leading-7 text-slate-200">
-                    Candidate and promoted assets from the qualification handshake route
-                    into <span className="font-semibold text-white">RioEx</span>.
+                  <div className="flex w-full flex-col gap-3 lg:max-w-xl">
+                    <div className="flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-black/25 px-4 py-3">
+                      <Search className="h-4 w-4 shrink-0 text-cyan-200" />
+                      <input
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder="Search token, pair, contract, symbol"
+                        className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-white outline-none placeholder:text-slate-500"
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-cyan-100">
+                        Registry-backed truth
+                      </span>
+                      <Link href={RIODEX_HOME_ROUTE} className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white hover:bg-white/[0.1]">
+                        RioDex
+                      </Link>
+                      <Link href={RIODEX_SWAP_ROUTE} className="rounded-xl border border-emerald-400/25 bg-emerald-500/12 px-4 py-2 text-sm font-bold text-emerald-100 hover:bg-emerald-500/18">
+                        Swap
+                      </Link>
+                      <Link href="/riodex/pools" className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white hover:bg-white/[0.1]">
+                        Liquidity
+                      </Link>
+                      <Link href="/riodex/pools" className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-white hover:bg-white/[0.1]">
+                        Pools
+                      </Link>
+                      <Link href="/createtoken/pump/board" className="rounded-xl border border-fuchsia-400/25 bg-fuchsia-500/12 px-4 py-2 text-sm font-bold text-fuchsia-100 hover:bg-fuchsia-500/18">
+                        Pump.live
+                      </Link>
+                      <Link href="/createtoken/prime" className="rounded-xl border border-amber-400/25 bg-amber-500/12 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-500/18">
+                        Prime
+                      </Link>
+                      <Link href="/rioex" className="rounded-xl border border-cyan-400/25 bg-cyan-500/12 px-4 py-2 text-sm font-bold text-cyan-100 hover:bg-cyan-500/18">
+                        RioEx
+                      </Link>
+                      <Link href="/rioexplorer" className="rounded-xl border border-violet-400/25 bg-violet-500/12 px-4 py-2 text-sm font-bold text-violet-100 hover:bg-violet-500/18">
+                        RioExplorer
+                      </Link>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
 
-            <section className={`${shell("panel")} mt-5 p-4`}>
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex flex-wrap items-center gap-2">
-                  {(["24h", "5m", "1h", "6h"] as TimeframeMode[]).map((option) => (
+                <div className="mt-5 flex flex-wrap items-center gap-2">
+                  {([
+                    ["all", "All"],
+                    ["pump", "PUMP.live"],
+                    ["prime", "Prime"],
+                    ["spo20", "SPO-20"],
+                    ["native", "Native"],
+                    ["stable", "Stable"],
+                    ["bridged", "Bridged"],
+                    ["reference", "Reference"],
+                  ] as Array<[OriginFilter, string]>).map(([value, label]) => (
                     <button
-                      key={option}
+                      key={value}
                       type="button"
-                      onClick={() => setTimeframe(option)}
-                      className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
-                        timeframe === option
-                          ? "border-white/20 bg-white text-black"
-                          : "border-white/10 bg-white/[0.06] text-white hover:bg-white/[0.10]"
-                      }`}
+                      onClick={() => setOriginFilter(value)}
+                      className={cx(
+                        "rounded-full border px-3 py-2 text-xs font-black uppercase tracking-[0.12em] transition",
+                        originFilter === value
+                          ? "border-cyan-400/30 bg-cyan-500/15 text-cyan-100"
+                          : "border-white/10 bg-white/[0.045] text-slate-300 hover:bg-white/[0.08]",
+                      )}
                     >
-                      {option}
+                      {label}
                     </button>
                   ))}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="mt-3 flex flex-wrap items-center gap-2">
                   {([
-                    ["volume", "Rank by Volume"],
-                    ["liquidity", "Rank by Liquidity"],
-                    ["mcap", "Rank by MCap"],
-                    ["txns", "Rank by TXNS"],
-                    ["new", "Rank by New"],
-                  ] as Array<[RankingMode, string]>).map(([mode, label]) => (
+                    ["all", "All markets"],
+                    ["trade_ready", "Trade ready"],
+                    ["reserves_indexed", "Liquidity seeded"],
+                    ["graduated", "Graduated"],
+                    ["awaiting_graduation", "Awaiting graduation"],
+                    ["awaiting_liquidity", "Awaiting liquidity"],
+                    ["awaiting_quote", "Awaiting quote"],
+                    ["awaiting_snapshots", "Awaiting snapshots"],
+                    ["no_liquidity", "No liquidity"],
+                  ] as Array<[ReadinessFilter, string]>).map(([value, label]) => (
                     <button
-                      key={mode}
+                      key={value}
                       type="button"
-                      onClick={() => setRanking(mode)}
-                      className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
-                        ranking === mode
-                          ? "border-cyan-400/20 bg-cyan-400/10 text-cyan-100"
-                          : "border-white/10 bg-white/[0.06] text-slate-200 hover:bg-white/[0.10]"
-                      }`}
+                      onClick={() => setReadinessFilter(value)}
+                      className={cx(
+                        "rounded-full border px-3 py-2 text-xs font-bold transition",
+                        readinessFilter === value
+                          ? "border-fuchsia-400/30 bg-fuchsia-500/15 text-fuchsia-100"
+                          : "border-white/10 bg-white/[0.045] text-slate-300 hover:bg-white/[0.08]",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+                  <StatTile label="Live markets" value={String(liveMarkets)} />
+                  <StatTile label="Trade ready" value={String(tradeReady)} />
+                  <StatTile label="Reserves" value={String(reservesIndexed)} />
+                  <StatTile label="24h volume" value={totalVolume && totalVolume > 0 ? money(totalVolume) : "Pending"} />
+                  <StatTile label="24h txns" value={totalTxns && totalTxns > 0 ? String(totalTxns) : "Pending"} />
+                  <StatTile label="Snapshots" value={awaitingSnapshots ? "Pending" : "Online"} />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#11141d] px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTimeframe("24h")}
+                    className="rounded-xl border border-blue-400/25 bg-blue-500/18 px-4 py-2 text-sm font-black text-blue-100 hover:bg-blue-500/24"
+                  >
+                    Last 24 hours
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRanking("volume")}
+                    className={cx(
+                      "rounded-xl border px-4 py-2 text-sm font-black transition",
+                      ranking === "volume"
+                        ? "border-blue-300/40 bg-blue-500/24 text-white"
+                        : "border-white/10 bg-white/[0.06] text-slate-300 hover:bg-white/[0.1]",
+                    )}
+                  >
+                    Trending
+                  </button>
+
+                  {(["5m", "1h", "6h", "24h"] as TimeframeMode[]).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => setTimeframe(option)}
+                      className={cx(
+                        "rounded-lg px-3 py-2 text-sm font-black transition",
+                        timeframe === option ? "bg-white text-[#243068]" : "bg-blue-500/18 text-blue-100 hover:bg-blue-500/24",
+                      )}
+                    >
+                      {option.toUpperCase()}
+                    </button>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={() => setRanking("liquidity")}
+                    className={cx(
+                      "rounded-xl border px-4 py-2 text-sm font-black transition",
+                      ranking === "liquidity"
+                        ? "border-white/25 bg-white text-black"
+                        : "border-white/10 bg-white/[0.06] text-white hover:bg-white/[0.1]",
+                    )}
+                  >
+                    Top
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRanking("new")}
+                    className={cx(
+                      "rounded-xl border px-4 py-2 text-sm font-black transition",
+                      ranking === "new"
+                        ? "border-emerald-300/35 bg-emerald-500/20 text-emerald-100"
+                        : "border-white/10 bg-white/[0.06] text-white hover:bg-white/[0.1]",
+                    )}
+                  >
+                    New Pairs
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Rank by:</span>
+                  {([
+                    ["liquidity", "Liquidity"],
+                    ["volume", "Volume"],
+                    ["txns", "TXNS"],
+                    ["new", "New"],
+                  ] as Array<[RankingMode, string]>).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setRanking(value)}
+                      className={cx(
+                        "rounded-lg border px-3 py-2 text-xs font-black transition",
+                        ranking === value ? "border-white/20 bg-white text-black" : "border-white/10 bg-white/[0.06] text-slate-300 hover:bg-white/[0.1]",
+                      )}
                     >
                       {label}
                     </button>
@@ -1064,305 +1160,132 @@ export default function RioDexMarketsPage() {
                 </div>
               </div>
 
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <div className="text-2xl font-semibold text-white">Market Objects</div>
-                <div className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.20em] text-slate-300">
-                  {filteredRows.length} rows
-                </div>
-              </div>
+              {error ? <div className="m-4 rounded-xl border border-rose-400/25 bg-rose-500/12 p-4 text-sm text-rose-100">{error}</div> : null}
 
-              {loading ? (
-                <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-6 text-sm text-slate-300">
-                  Loading screener rows...
-                </div>
-              ) : !filteredRows.length ? (
-                <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-6 text-sm text-slate-300">
-                  No market objects match the active filters.
-                </div>
-              ) : (
-                <div className="mt-4 rounded-[24px] border border-white/10 bg-black/20">
-                  <div className="hidden grid-cols-[2.3fr_1fr_1fr_0.85fr_1fr_0.85fr_0.75fr_1.05fr_1.05fr] gap-4 border-b border-white/10 px-5 py-4 text-[11px] font-extrabold uppercase tracking-[0.22em] text-slate-400 lg:grid">
+              <div className="overflow-x-auto">
+                <div className="min-w-[1500px]">
+                  <div className="grid grid-cols-[64px_2.25fr_0.85fr_1.05fr_1.05fr_0.9fr_0.85fr_0.95fr_0.8fr_0.95fr_1.15fr] border-b border-white/10 bg-[#303139] px-4 py-3 text-xs font-black uppercase tracking-[0.08em] text-white">
+                    <div>#</div>
                     <div>Token</div>
-                    <div>Class</div>
-                    <div>MCap</div>
+                    <div>Source</div>
+                    <div>M.Cap / Ref</div>
+                    <div>FDV / Move</div>
+                    <div>Age / Trend</div>
+                    <div>Txns</div>
+                    <div>Volume</div>
                     <div>Price</div>
                     <div>Liquidity</div>
-                    <div>Volume</div>
-                    <div>Txns</div>
-                    <div>Status</div>
                     <div>Actions</div>
                   </div>
 
-                  <div className="divide-y divide-white/8">
-                    {filteredRows.map((row) => {
-                      const [left = "A", right = "B"] = row.symbol
-                        .split("/")
-                        .map((v) => v.trim());
-                      const isWatched = watchlist.includes(row.pairAddress);
-                      const poolHref = row.routes.pool;
-                      const swapHref = row.routes.swap;
-                      const liquidityHref = row.routes.liquidity;
-
-                      return (
-                        <div key={row.pairAddress} className="px-5 py-5">
-                          <div className="hidden items-center gap-3 lg:grid lg:grid-cols-[2.3fr_1fr_1fr_0.85fr_1fr_0.85fr_0.75fr_1.05fr_1.05fr]">
-                            <div className="flex items-center gap-3">
+                  {loading ? (
+                    <div className="p-8 text-sm text-slate-300">Loading source-of-truth market rows…</div>
+                  ) : filteredRows.length ? (
+                    <div className="divide-y divide-white/[0.06]">
+                      {filteredRows.map((row, index) => {
+                        const watched = watchlist.includes(row.pairAddress);
+                        return (
+                          <div
+                            key={row.pairAddress}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => {
+                              setSelectedPair(row.pairAddress);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                setSelectedPair(row.pairAddress);
+                              }
+                            }}
+                            className={cx(
+                              "grid w-full grid-cols-[64px_2.25fr_0.85fr_1.05fr_1.05fr_0.9fr_0.85fr_0.95fr_0.8fr_0.95fr_1.15fr] items-center px-4 py-[18px] text-left text-sm transition hover:bg-white/[0.045]",
+                              selected?.pairAddress === row.pairAddress ? "bg-cyan-500/[0.055]" : "bg-[#11131b]",
+                            )}
+                          >
+                            <div className="text-slate-400">#{index + 1}</div>
+                            <div className="flex min-w-0 items-center gap-3">
                               <button
                                 type="button"
-                                onClick={() => toggleWatchlist(row.pairAddress)}
-                                className={`flex h-8 w-8 items-center justify-center rounded-full border transition ${
-                                  isWatched
-                                    ? "border-amber-400/20 bg-amber-400/10 text-amber-100"
-                                    : "border-white/10 bg-white/[0.05] text-slate-400 hover:bg-white/[0.10]"
-                                }`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  toggleWatchlist(row.pairAddress);
+                                }}
+                                className={cx("flex h-8 w-8 shrink-0 items-center justify-center rounded-full border", watched ? "border-amber-400/30 bg-amber-500/15 text-amber-100" : "border-white/10 bg-white/[0.04] text-slate-500")}
                               >
                                 <Star className="h-4 w-4" />
                               </button>
-
-                              <Link href={poolHref} className="flex items-center gap-3 min-w-0">
-                                <PairMarks
-                                  logo0={row.logo0}
-                                  logo1={row.logo1}
-                                  fallback0={left}
-                                  fallback1={right}
-                                />
-
-                                <div className="min-w-0">
-                                  <div className="truncate text-lg font-semibold text-white">
-                                    {row.symbol}
-                                  </div>
-                                  <div className="mt-1 text-xs text-slate-400">
-                                    {shortAddr(row.pairAddress, 12, 8)}
-                                  </div>
-                                  <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-cyan-200/80">
-                                    {row.truthSource === "authoritative_registry"
-                                      ? "Authoritative Registry"
-                                      : "Authoritative Screener"}
-                                  </div>
+                              <PairLogos row={row} />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="truncate text-base font-black text-white">{row.displaySymbol}</span>
+                                  {row.isCanonical ? <Badge className="border-violet-400/25 bg-violet-500/12 text-violet-100">Canonical</Badge> : null}
                                 </div>
+                                <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-slate-500">
+                                  <span className="truncate">{row.baseSymbol}</span>
+                                  <span>/</span>
+                                  <span className="truncate">{row.quoteSymbol}</span>
+                                  <span>•</span>
+                                  <span>{shortAddr(row.pairAddress)}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div><Badge className={originBadgeClass(row.origin)}>{row.origin}</Badge></div>
+                            <div className="text-[11px] leading-5">
+                              <div className="font-black text-white">{row.marketCapLabel}</div>
+                              <div className="truncate text-cyan-100/60">Ref {row.fdvReferenceLabel}</div>
+                            </div>
+                            <div className="text-[11px] leading-5">
+                              <div className="font-black text-slate-100">FDV {row.fdvLabel}</div>
+                              <div className="truncate text-slate-400">Move {row.priceMoveLabel}</div>
+                            </div>
+                            <div className="text-[11px] leading-5">
+                              <div className="font-black text-emerald-300">{row.ageLabel}</div>
+                              <div className="truncate text-slate-400">{row.trendLabel}</div>
+                            </div>
+                            <div className="font-bold text-white">{row.txnsLabel}</div>
+                            <div className="font-bold text-white">{row.volumeLabel}</div>
+                            <div className="font-bold text-white">{row.priceLabel}</div>
+                            <div className="text-xs font-bold text-cyan-100">
+                              <div>{row.liquidityUsd !== null ? money(row.liquidityUsd) : row.liquidityLabel}</div>
+                              {row.reserveLabel ? <div className="mt-1 truncate text-cyan-100/55">{row.reserveLabel}</div> : null}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Link
+                                href={`/riodex/swap?pair=${encodeURIComponent(row.pairAddress)}`}
+                                onClick={(event) => event.stopPropagation()}
+                                className="rounded-lg border border-emerald-400/25 bg-emerald-500/12 px-3 py-2 text-xs font-black text-emerald-100 hover:bg-emerald-500/18"
+                              >
+                                Trade
                               </Link>
-                            </div>
-
-                            <div>
-                              <StatusPill label={row.classLabel} />
-                            </div>
-
-                            <div className="text-sm text-white">
-                              {row.mcap !== null ? formatMoney(row.mcap, 0) : "—"}
-                            </div>
-
-                            <div className="text-sm text-white">{formatPrice(row.price)}</div>
-
-                            <div className="text-sm text-white">
-                              {formatMoney(row.liquidityUsd, 0)}
-                            </div>
-
-                            <div className="text-sm text-white">
-                              {row.windowVolume > 0 ? formatMoney(row.windowVolume, 0) : "$0"}
-                            </div>
-
-                            <div className="text-sm text-white">{row.windowTxns}</div>
-
-                            <div>
-                              <details className="group relative z-40">
-                                <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/[0.10]">
-                                  <span>Status</span>
-                                  <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
+                              <details onClick={(event) => event.stopPropagation()} className="relative">
+                                <summary className="flex cursor-pointer list-none items-center gap-1 rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-xs font-black text-white hover:bg-white/[0.1]">
+                                  More <ChevronDown className="h-3 w-3" />
                                 </summary>
-                                <div className="absolute right-0 top-[calc(100%+10px)] z-[95] min-w-[220px] rounded-2xl border border-white/10 bg-[#0d1220] p-3 shadow-[0_16px_60px_rgba(0,0,0,0.45)]">
-                                  <div className="flex flex-wrap gap-2">
-                                    {row.statuses.map((status) => (
-                                      <StatusPill key={status} label={status} />
-                                    ))}
-                                  </div>
-                                  {row.alertFlags.length ? (
-                                    <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-xs text-amber-100">
-                                      {row.alertFlags.join(" • ")}
-                                    </div>
-                                  ) : null}
-                                </div>
-                              </details>
-                            </div>
-
-                            <div>
-                              <details className="group relative z-40">
-                                <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/[0.10]">
-                                  <span>Actions</span>
-                                  <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
-                                </summary>
-                                <div className="absolute right-0 top-[calc(100%+10px)] z-[95] min-w-[220px] rounded-2xl border border-white/10 bg-[#0d1220] p-2 shadow-[0_16px_60px_rgba(0,0,0,0.45)]">
-                                  <Link
-                                    href={swapHref}
-                                    className="block rounded-xl px-3 py-2 text-sm text-white transition hover:bg-white/[0.06]"
-                                  >
-                                    Swap
-                                  </Link>
-                                  <Link
-                                    href={liquidityHref}
-                                    className="block rounded-xl px-3 py-2 text-sm text-white transition hover:bg-white/[0.06]"
-                                  >
-                                    Liquidity
-                                  </Link>
-                                  <Link
-                                    href={poolHref}
-                                    className="block rounded-xl px-3 py-2 text-sm text-white transition hover:bg-white/[0.06]"
-                                  >
-                                    Pool
-                                  </Link>
-                                  <Link
-                                    href="/rioex"
-                                    className="block rounded-xl px-3 py-2 text-sm text-white transition hover:bg-white/[0.06]"
-                                  >
-                                    RioEx
-                                  </Link>
+                                <div className="absolute right-0 top-[calc(100%+8px)] z-50 min-w-[180px] rounded-xl border border-white/10 bg-[#11131b] p-2 shadow-2xl">
+                                  <Link href={row.routes.assetTerminal} className="block rounded-lg px-3 py-2 text-xs font-bold text-white hover:bg-white/[0.08]">RioEx</Link>
+                                  <Link href={row.routes.pool} className="block rounded-lg px-3 py-2 text-xs font-bold text-white hover:bg-white/[0.08]">Pool</Link>
+                                  <Link href={row.routes.liquidity} className="block rounded-lg px-3 py-2 text-xs font-bold text-white hover:bg-white/[0.08]">Liquidity</Link>
+                                  <Link href={row.routes.explorer} className="block rounded-lg px-3 py-2 text-xs font-bold text-white hover:bg-white/[0.08]">RioExplorer</Link>
                                 </div>
                               </details>
                             </div>
                           </div>
-
-                          <div className="space-y-4 lg:hidden">
-                            <div className="flex items-center gap-3">
-                              <button
-                                type="button"
-                                onClick={() => toggleWatchlist(row.pairAddress)}
-                                className={`flex h-8 w-8 items-center justify-center rounded-full border transition ${
-                                  isWatched
-                                    ? "border-amber-400/20 bg-amber-400/10 text-amber-100"
-                                    : "border-white/10 bg-white/[0.05] text-slate-400 hover:bg-white/[0.10]"
-                                }`}
-                              >
-                                <Star className="h-4 w-4" />
-                              </button>
-
-                              <Link href={poolHref} className="flex items-center gap-3 min-w-0">
-                                <PairMarks
-                                  logo0={row.logo0}
-                                  logo1={row.logo1}
-                                  fallback0={left}
-                                  fallback1={right}
-                                />
-                                <div className="min-w-0">
-                                  <div className="truncate text-xl font-semibold text-white">
-                                    {row.symbol}
-                                  </div>
-                                  <div className="mt-1 text-xs text-slate-400">
-                                    {shortAddr(row.pairAddress, 12, 8)}
-                                  </div>
-                                </div>
-                              </Link>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className={`${shell("subtle")} p-4`}>
-                                <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
-                                  Price
-                                </div>
-                                <div className="mt-2 text-lg font-semibold text-white">
-                                  {formatPrice(row.price)}
-                                </div>
-                              </div>
-                              <div className={`${shell("subtle")} p-4`}>
-                                <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
-                                  Liquidity
-                                </div>
-                                <div className="mt-2 text-lg font-semibold text-white">
-                                  {formatMoney(row.liquidityUsd, 0)}
-                                </div>
-                              </div>
-                              <div className={`${shell("subtle")} p-4`}>
-                                <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
-                                  Volume
-                                </div>
-                                <div className="mt-2 text-lg font-semibold text-white">
-                                  {row.windowVolume > 0 ? formatMoney(row.windowVolume, 0) : "$0"}
-                                </div>
-                              </div>
-                              <div className={`${shell("subtle")} p-4`}>
-                                <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
-                                  Txns
-                                </div>
-                                <div className="mt-2 text-lg font-semibold text-white">
-                                  {row.windowTxns}
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="flex flex-wrap gap-2">
-                              {row.statuses.map((status) => (
-                                <StatusPill key={status} label={status} />
-                              ))}
-                            </div>
-
-                            <div className="flex flex-wrap gap-2">
-                              <Link
-                                href={swapHref}
-                                className="rounded-full border border-fuchsia-400/20 bg-fuchsia-400/12 px-3 py-1.5 text-xs font-semibold text-fuchsia-100"
-                              >
-                                Swap
-                              </Link>
-                              <Link
-                                href={liquidityHref}
-                                className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1.5 text-xs font-semibold text-cyan-100"
-                              >
-                                Liquidity
-                              </Link>
-                              <Link
-                                href={poolHref}
-                                className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-semibold text-white"
-                              >
-                                Pool
-                              </Link>
-                            </div>
-                          </div>
-
-                          {sideMode === "multicharts" ? (
-                            <div className="mt-4 grid gap-3 md:grid-cols-4">
-                              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                                <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
-                                  Age
-                                </div>
-                                <div className="mt-2 text-sm font-semibold text-white">
-                                  {row.ageDays !== null ? `${row.ageDays}d` : "—"}
-                                </div>
-                              </div>
-                              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                                <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
-                                  Last Activity
-                                </div>
-                                <div className="mt-2 text-sm font-semibold text-white">
-                                  {formatActivityTime(row.lastActivity)}
-                                </div>
-                              </div>
-                              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                                <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
-                                  Alerts
-                                </div>
-                                <div className="mt-2 text-sm font-semibold text-white">
-                                  {row.alertFlags.length || 0}
-                                </div>
-                              </div>
-                              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                                <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
-                                  Move
-                                </div>
-                                <div className="mt-2 text-sm font-semibold text-white">
-                                  {row.changePct !== null ? `${formatNumber(row.changePct, 2)}%` : "—"}
-                                </div>
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="border-t border-white/8 px-5 py-4 text-sm text-slate-400">
-                    {screenerFootnote}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-sm text-slate-300">No market rows match the active filters.</div>
+                  )}
                 </div>
-              )}
+              </div>
+
+              <div className="border-t border-white/10 px-5 py-4 text-xs leading-6 text-slate-400">
+                Markets are rendered only from indexed source-of-truth rows. Pending fields stay blank until verified price feeds, swap windows, or market snapshots exist.
+              </div>
             </section>
           </main>
+
         </div>
       </div>
     </div>

@@ -3,13 +3,20 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { TOP_NAV } from "./nav-config";
-import { getKeplrSigner } from "@/lib/cosm";
+import { connectRioLight } from "@/lib/riolight";
 
 const RIO_LOGO =
-  "https://avatars.githubusercontent.com/u/175851528?s=400&u=b0c1a871d1e739566c4c2bf96a97720fedfc03ab&v=4";
+  "/icons/riolight-official-rio.png";
 
 const WALLET_STORAGE_KEY = "spherio_wallet_address";
+const WALLET_STORAGE_KEYS = [
+  "spherio_wallet_address",
+  "riolight.activeAddress",
+  "spherio.riolight.address",
+  "spherio.wallet.address",
+] as const;
 const WALLET_EVENT = "spherio:wallet-changed";
+const RIOLIGHT_CONNECTED_EVENT = "spherio:riolight-connected";
 
 function shortAddr(v?: string | null, left = 10, right = 8) {
   if (!v) return "—";
@@ -19,18 +26,34 @@ function shortAddr(v?: string | null, left = 10, right = 8) {
 
 function readStoredWalletAddress() {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(WALLET_STORAGE_KEY);
+
+  for (const key of WALLET_STORAGE_KEYS) {
+    const value = window.localStorage.getItem(key);
+    if (value?.startsWith("rio1")) return value;
+  }
+
+  return null;
 }
 
 function writeStoredWalletAddress(address: string | null) {
   if (typeof window === "undefined") return;
-  if (address) {
-    window.localStorage.setItem(WALLET_STORAGE_KEY, address);
-  } else {
-    window.localStorage.removeItem(WALLET_STORAGE_KEY);
+
+  for (const key of WALLET_STORAGE_KEYS) {
+    if (address) {
+      window.localStorage.setItem(key, address);
+    } else {
+      window.localStorage.removeItem(key);
+    }
   }
+
   window.dispatchEvent(
     new CustomEvent(WALLET_EVENT, {
+      detail: { address },
+    })
+  );
+
+  window.dispatchEvent(
+    new CustomEvent(RIOLIGHT_CONNECTED_EVENT, {
       detail: { address },
     })
   );
@@ -39,6 +62,7 @@ function writeStoredWalletAddress(address: string | null) {
 export function TopNav({ activeSection }: { activeSection: string }) {
   const [connectedAddress, setConnectedAddress] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [connectNotice, setConnectNotice] = useState<string | null>(null);
 
   useEffect(() => {
     function syncWallet() {
@@ -46,7 +70,7 @@ export function TopNav({ activeSection }: { activeSection: string }) {
     }
 
     function onStorage(e: StorageEvent) {
-      if (e.key === WALLET_STORAGE_KEY) {
+      if (!e.key || WALLET_STORAGE_KEYS.includes(e.key as any)) {
         syncWallet();
       }
     }
@@ -59,29 +83,46 @@ export function TopNav({ activeSection }: { activeSection: string }) {
 
     window.addEventListener("storage", onStorage);
     window.addEventListener(WALLET_EVENT, onWalletChanged as EventListener);
+    window.addEventListener(RIOLIGHT_CONNECTED_EVENT, onWalletChanged as EventListener);
 
     return () => {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener(WALLET_EVENT, onWalletChanged as EventListener);
+      window.removeEventListener(RIOLIGHT_CONNECTED_EVENT, onWalletChanged as EventListener);
     };
   }, []);
 
   async function handleConnect() {
+    setConnecting(true);
+    setConnectNotice(null);
+
+    const timeout = window.setTimeout(() => {
+      setConnecting(false);
+      setConnectNotice("RioLight connection timed out. Open the RioLight extension, unlock it, then try again.");
+    }, 12000);
+
     try {
-      setConnecting(true);
-      const { address } = await getKeplrSigner();
-      setConnectedAddress(address);
-      writeStoredWalletAddress(address);
+      const wallet = await connectRioLight();
+      window.clearTimeout(timeout);
+      setConnectedAddress(wallet.address);
+      writeStoredWalletAddress(wallet.address);
+      setConnectNotice(null);
     } catch (e: any) {
-      console.error("TopNav wallet connect failed", e);
-      alert(e?.message || "Failed to connect Keplr");
+      window.clearTimeout(timeout);
+      console.error("TopNav RioLight connect failed", e);
+      setConnectNotice(
+        e?.message ||
+          "Failed to connect RioLight. Open the RioLight extension, unlock it, then try again.",
+      );
     } finally {
+      window.clearTimeout(timeout);
       setConnecting(false);
     }
   }
 
   function handleDisconnect() {
     setConnectedAddress(null);
+    setConnectNotice(null);
     writeStoredWalletAddress(null);
   }
 
@@ -149,14 +190,26 @@ export function TopNav({ activeSection }: { activeSection: string }) {
           {connected ? (
             <>
               <div
-                className="rounded-xl border border-white/10 bg-[rgba(255,255,255,0.04)] px-3 py-2 text-sm text-slate-200"
+                className="flex h-11 items-center gap-2 rounded-xl border border-cyan-300/18 bg-cyan-500/[0.07] px-3 text-sm text-slate-100"
                 title={connectedAddress || ""}
               >
-                {shortAddr(connectedAddress, 10, 8)}
+                <img
+                  src="/icons/riolight-official-rio.png"
+                  alt="RioLight"
+                  className="h-5 w-5 rounded-md"
+                />
+                <div className="leading-tight">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-200/70">
+                    RioLight
+                  </div>
+                  <div className="text-xs font-semibold text-white">
+                    Connected
+                  </div>
+                </div>
               </div>
               <button
                 onClick={handleDisconnect}
-                className="rounded-xl border border-[#ff7a95]/20 bg-[linear-gradient(180deg,rgba(171,29,72,0.90),rgba(104,16,41,0.96))] px-4 py-2 text-sm font-semibold text-white"
+                className="h-11 rounded-xl border border-[#ff7a95]/20 bg-[linear-gradient(180deg,rgba(171,29,72,0.86),rgba(104,16,41,0.94))] px-3 text-sm font-semibold text-white"
               >
                 Disconnect
               </button>
@@ -167,10 +220,17 @@ export function TopNav({ activeSection }: { activeSection: string }) {
               disabled={connecting}
               className="rounded-xl border border-[#ff7a95]/20 bg-[linear-gradient(180deg,rgba(171,29,72,0.90),rgba(104,16,41,0.96))] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {connecting ? "Connecting..." : "Connect"}
+              {connecting ? "Connecting..." : "Connect RioLight"}
             </button>
           )}
         </div>
+
+        {connectNotice ? (
+          <div className="absolute right-4 top-[78px] z-[60] max-w-[360px] rounded-2xl border border-cyan-300/20 bg-[#061320]/95 px-4 py-3 text-sm leading-5 text-cyan-50 shadow-2xl backdrop-blur-xl">
+            <div className="font-semibold text-white">RioLight connection</div>
+            <div className="mt-1 text-cyan-50/75">{connectNotice}</div>
+          </div>
+        ) : null}
       </div>
     </header>
   );

@@ -1,5 +1,8 @@
-import { redirect } from "next/navigation";
+import RioExplorerHome from "@/app/rioexplorer/page";
 
-export default function Home() {
-  redirect("/overview");
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export default function HomePage() {
+  return <RioExplorerHome />;
 }

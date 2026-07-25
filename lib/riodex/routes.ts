@@ -1,11 +1,11 @@
 // lib/riodex/routes.ts
 
 export const RIODEX_HOME_ROUTE = "/riodex";
-export const RIODEX_SCREENER_ROUTE = "/riodex/markets";
+export const RIODEX_SCREENER_ROUTE = "/rioex";
 export const RIODEX_SWAP_ROUTE = "/riodex/swap";
-export const RIODEX_LIQUIDITY_ROUTE = "/riodex/liquidity";
+export const RIODEX_LIQUIDITY_ROUTE = "/riodex/pools";
 export const RIODEX_POOLS_ROUTE = "/riodex/pools";
-export const RIODEX_POOL_BASE_ROUTE = "/riodex/pool";
+export const RIODEX_POOL_BASE_ROUTE = "/riodex/pools";
 
 export const LAUNCHPAD_ROUTE = "/launch";
 export const RIOEX_ROUTE = "/rioex";

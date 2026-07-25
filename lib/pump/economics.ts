@@ -38,7 +38,7 @@ export function getPumpFeePolicy(): PumpFeePolicy {
 
 export function getPumpEconomicsPolicy(): PumpEconomicsPolicy {
   return {
-    graduationTargetUsd: 62500,
+    graduationTargetUsd: 65000,
     graduationTargetUsdMin: 60000,
     graduationTargetUsdMax: 65000,
     lpTargetUsd: 15000,

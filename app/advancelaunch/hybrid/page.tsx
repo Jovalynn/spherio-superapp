@@ -1,4 +1,5 @@
 "use client";
+import { SPHERIO_TREASURY_MULTISIG } from "@/lib/protocol/treasury";
 
 import { useMemo, useState } from "react";
 import { getKeplrSigner, getSigningClient } from "@/lib/cosm";
@@ -23,7 +24,7 @@ export const HYBRID_POLICY = {
   chainId: SPHERIO.chainId,
   feeUrio: "1000000",
   feeRioDisplay: "1.000000",
-  feeRecipient: "rio1nnhxsa49cc5e9vyxj6r6s3hwlkymcrletx7wch",
+  feeRecipient: SPHERIO_TREASURY_MULTISIG,
 };
 
 function extractInstantiatedContractAddress(res: any): string | null {

@@ -159,7 +159,7 @@ export async function GET(_request: NextRequest) {
       asset1Id: market.quoteAssetId || null,
       routes: market.routes || {
         assetTerminal: `/rioex/markets/${encodeURIComponent(market.pairAddress)}`,
-        marketBoard: "/rioex/markets",
+        marketBoard: "/rioex",
         hero: "/rioex",
         trade: `/rioex/markets/${encodeURIComponent(market.pairAddress)}/trades`,
         pool: `/riodex/pool/${encodeURIComponent(market.pairAddress)}`,

@@ -1,0 +1,47 @@
+import { Pool } from "pg";
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __riomindPgPool: Pool | undefined;
+}
+
+function getConnectionString() {
+  return (
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_CONNECTION_STRING ||
+    process.env.SPHERIO_DATABASE_URL ||
+    ""
+  );
+}
+
+export function getRioMindPgPool() {
+  if (!globalThis.__riomindPgPool) {
+    const connectionString = getConnectionString();
+
+    globalThis.__riomindPgPool = connectionString
+      ? new Pool({ connectionString })
+      : new Pool({
+          host: process.env.POSTGRES_HOST || process.env.PGHOST || "postgres",
+          port: Number(process.env.POSTGRES_PORT || process.env.PGPORT || 5432),
+          database: process.env.POSTGRES_DB || process.env.PGDATABASE || "spherio_indexer",
+          user: process.env.POSTGRES_USER || process.env.PGUSER || "spherio",
+          password: process.env.POSTGRES_PASSWORD || process.env.PGPASSWORD || "spherio",
+        });
+  }
+
+  return globalThis.__riomindPgPool;
+}
+
+export function getRioMindOwnerKey(headers: Headers) {
+  return (
+    headers.get("x-riomind-owner") ||
+    headers.get("x-nexus-owner") ||
+    "local_dev"
+  ).slice(0, 120);
+}
+
+export function makeConversationTitle(input?: string) {
+  const cleaned = String(input || "New chat").replace(/\s+/g, " ").trim();
+  return cleaned.length > 64 ? `${cleaned.slice(0, 64)}...` : cleaned || "New chat";
+}

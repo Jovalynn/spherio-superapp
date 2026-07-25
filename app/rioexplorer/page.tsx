@@ -81,10 +81,26 @@ export default function RioExplorerHome() {
       status: "live",
       tag: "Asset Registry",
     },
+    {
+      title: "Address Proof",
+      description:
+        "Dedicated proof surface for pool contracts, addresses, LP tokens, reserves, registry classification, and liquidity evidence.",
+      href: "/rioexplorer/address/rio1zfw930csx0k5qzf35vndaulwada4wa3pwtg5hy8rmnnx35wdyhssn3pmhj",
+      status: "live",
+      tag: "Account Proof",
+    },
+    {
+      title: "RioDex Pair Proof",
+      description:
+        "Pool-level proof for RioDex pairs, reserves, swaps, liquidity snapshots, LP token evidence, CPMM status, and RioEx handoff visibility.",
+      href: "/rioexplorer/address/rio19ywlajpmnlq7gulvepvq6yfesl04l4ker0jf0n3e0l5crhmh9v2qsjdm4e",
+      status: "live",
+      tag: "DEX Proof",
+    },
   ];
 
   const coreTiles: ExplorerTile[] = [
-    { title: "Accounts", description: "Address-level investigation for balances, counterparties, touched contracts, asset flows, and timelines.", status: "next", tag: "Investigation" },
+    { title: "Accounts", description: "Address-level investigation is now live through Address Proof, with balances and deeper account flows expanding as the indexer grows.", href: "/rioexplorer/address/rio1zfw930csx0k5qzf35vndaulwada4wa3pwtg5hy8rmnnx35wdyhssn3pmhj", status: "live", tag: "Investigation" },
     { title: "Contracts", description: "Contract verification, execution traceability, code lineage, instantiated modules, and route evidence.", status: "next", tag: "Execution" },
     { title: "Assets", description: "Explorer-grade RIO, RUSD, and future asset pages with transfers, holders, mint and burn records, and route linkage.", status: "next", tag: "Asset Truth" },
     { title: "Attestations", description: "Reserve-proof and collateral-evidence layer for RUSD. Narrative stays in RUSD terminal; proof lives here.", href: "/rioexplorer/attestations", status: "live", tag: "Reserve Proof" },
@@ -107,19 +123,22 @@ export default function RioExplorerHome() {
               </h1>
 
               <p className="mt-4 max-w-4xl text-sm leading-7 text-white/68">
-                RioExplorer is the accountable layer of the chain. It should resolve blocks, transactions,
-                accounts, assets, contracts, launches, treasury routing, and reserve evidence into one institutional investigation surface.
+                RioExplorer is the accountable layer of the chain. It resolves blocks, transactions,
+                address proof, pool contracts, assets, launches, treasury routing, and reserve evidence into one institutional investigation surface.
               </p>
 
               <div className="mt-5 flex flex-wrap gap-3">
                 <span className={pillClass("truth")}>Truth Model First</span>
                 <span className={pillClass("live")}>Blocks Active</span>
                 <span className={pillClass("live")}>SPO-20 Active</span>
+                <span className={pillClass("live")}>Address Proof Active</span>
               </div>
 
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link href="/rioexplorer/blocks" className={actionClass(true)}>Open Blocks / Transactions</Link>
                 <Link href="/rioexplorer/spo20" className={actionClass(false)}>Open SPO-20</Link>
+                <Link href="/rioexplorer/address/rio1zfw930csx0k5qzf35vndaulwada4wa3pwtg5hy8rmnnx35wdyhssn3pmhj" className={actionClass(false)}>Open Address Proof</Link>
+                <Link href="/rioexplorer/address/rio19ywlajpmnlq7gulvepvq6yfesl04l4ker0jf0n3e0l5crhmh9v2qsjdm4e" className={actionClass(false)}>Open RioDex Proof</Link>
               </div>
             </div>
 

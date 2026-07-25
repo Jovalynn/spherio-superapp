@@ -26,7 +26,7 @@ const NAV: NavGroup[] = [
     items: [
       { href: "/createtoken", label: "CreateToken" },
       { href: "/advancelaunch", label: "AdvancedLaunch" },
-      { href: "/pumplive", label: "Pump.live", disabled: true, badge: "coming soon" },
+      { href: "/pumplive", label: "Pump.live", disabled: true, badge: "Next" },
     ],
   },
   {

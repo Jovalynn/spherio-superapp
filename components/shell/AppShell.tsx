@@ -1,14 +1,45 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { getActiveSection } from "./nav-config";
 import { TopNav } from "./TopNav";
 import { ContextRail } from "./ContextRail";
 
+function getDomainAwareActiveSection(pathname: string) {
+  if (typeof window === "undefined") {
+    return getActiveSection(pathname);
+  }
+
+  const host = window.location.hostname.toLowerCase();
+
+  if (pathname === "/" || pathname === "") {
+    if (host.startsWith("explorer.")) return "explorer";
+    if (host.startsWith("dex.") || host.startsWith("markets.")) return "markets";
+    if (host.startsWith("wallet.") || host.startsWith("riolight.")) return "wallet";
+    if (host.startsWith("app.")) return "overview";
+  }
+
+  return getActiveSection(pathname);
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const activeSection = getActiveSection(pathname);
+
+  const activeSection = useMemo(
+    () => getDomainAwareActiveSection(pathname),
+    [pathname]
+  );
+
+  const isStandaloneProductPath =
+    pathname === "/nexus" ||
+    pathname.startsWith("/nexus/") ||
+    pathname === "/riomind/chat" ||
+    pathname.startsWith("/riomind/chat/");
+
+  if (isStandaloneProductPath) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="min-h-screen bg-[#05070a] text-white">
