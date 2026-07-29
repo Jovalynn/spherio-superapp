@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import CreateMeetingForm, {
+  type NexusMeetingRecord,
+} from "@/components/nexus/meetings/CreateMeetingForm";
 
 type TeamPayload = {
   ok: boolean;
@@ -37,15 +40,6 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ teamId
   const [actionMessage, setActionMessage] = useState("");
 
   const [meetings, setMeetings] = useState<any[]>([]);
-  const [meetingTitle, setMeetingTitle] = useState("");
-  const [meetingPurpose, setMeetingPurpose] = useState("");
-  const [meetingOrganizer, setMeetingOrganizer] = useState("John");
-  const [meetingDate, setMeetingDate] = useState("");
-  const [meetingTime, setMeetingTime] = useState("");
-  const [meetingDuration, setMeetingDuration] = useState("60");
-  const [meetingLanguageMode, setMeetingLanguageMode] = useState("single");
-  const [meetingLanguage, setMeetingLanguage] = useState("en");
-  const [meetingRoomId, setMeetingRoomId] = useState("");
 
   const [memberName, setMemberName] = useState("");
   const [memberEmail, setMemberEmail] = useState("");
@@ -90,45 +84,6 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ teamId
   useEffect(() => {
     loadTeam();
   }, [teamId]);
-
-  async function createMeeting() {
-    if (!teamId || !meetingTitle.trim()) return;
-    setActionMessage("");
-
-    const res = await fetch(`/api/riomind/teams/${teamId}/meetings`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        roomId: meetingRoomId || rooms[0]?.id || null,
-        title: meetingTitle,
-        purpose: meetingPurpose,
-        organizer: meetingOrganizer || "Organizer",
-        meetingDate,
-        meetingTime,
-        durationMinutes: Number(meetingDuration || 60),
-        languageMode: meetingLanguageMode,
-        defaultLanguage: meetingLanguage,
-      }),
-    });
-
-    const json = await res.json();
-
-    if (!json.ok) {
-      setActionMessage(json.error || "Could not create meeting.");
-      return;
-    }
-
-    setMeetings((prev) => [json.meeting, ...prev]);
-    setMeetingTitle("");
-    setMeetingPurpose("");
-    setMeetingDate("");
-    setMeetingTime("");
-    setMeetingDuration("60");
-    setMeetingLanguageMode("single");
-    setMeetingLanguage("en");
-    setMeetingRoomId("");
-    setActionMessage(`Meeting created: ${json.meeting.meeting_code}`);
-  }
 
   async function addMember() {
     if (!teamId) return;
@@ -308,94 +263,36 @@ export default function TeamWorkspacePage({ params }: { params: Promise<{ teamId
         </div>
 
         <section className="mt-6 rounded-3xl border border-cyan-300/20 bg-white/[0.04] p-6">
-          <h2 className="text-xl font-semibold">Meeting Scheduler</h2>
-          <p className="mt-2 text-sm text-slate-400">
-            Organizer fills the meeting once. Participants only click the invite link to join or reserve their place.
-          </p>
-
-          <div className="mt-5 grid gap-3 lg:grid-cols-2">
-            <input
-              value={meetingTitle}
-              onChange={(e) => setMeetingTitle(e.target.value)}
-              placeholder="Meeting title"
-              className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 outline-none focus:border-cyan-300/60"
-            />
-
-            <input
-              value={meetingOrganizer}
-              onChange={(e) => setMeetingOrganizer(e.target.value)}
-              placeholder="Organizer"
-              className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 outline-none focus:border-cyan-300/60"
-            />
-
-            <textarea
-              value={meetingPurpose}
-              onChange={(e) => setMeetingPurpose(e.target.value)}
-              placeholder="Purpose of the meeting"
-              className="min-h-24 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 outline-none focus:border-cyan-300/60 lg:col-span-2"
-            />
-
-            <input
-              type="date"
-              value={meetingDate}
-              onChange={(e) => setMeetingDate(e.target.value)}
-              className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 outline-none focus:border-cyan-300/60"
-            />
-
-            <input
-              type="time"
-              value={meetingTime}
-              onChange={(e) => setMeetingTime(e.target.value)}
-              className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 outline-none focus:border-cyan-300/60"
-            />
-
-            <input
-              type="number"
-              min="5"
-              value={meetingDuration}
-              onChange={(e) => setMeetingDuration(e.target.value)}
-              placeholder="Duration minutes"
-              className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 outline-none focus:border-cyan-300/60"
-            />
-
-            <select
-              value={meetingRoomId}
-              onChange={(e) => setMeetingRoomId(e.target.value)}
-              className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 outline-none focus:border-cyan-300/60"
-            >
-              <option value="">Default room</option>
-              {rooms.map((room) => (
-                <option key={room.id} value={room.id}>{room.name}</option>
-              ))}
-            </select>
-
-            <select
-              value={meetingLanguageMode}
-              onChange={(e) => setMeetingLanguageMode(e.target.value)}
-              className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 outline-none focus:border-cyan-300/60"
-            >
-              <option value="single">Single-language meeting</option>
-              <option value="multi">Multi-language meeting</option>
-            </select>
-
-            <select
-              value={meetingLanguage}
-              onChange={(e) => setMeetingLanguage(e.target.value)}
-              className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 outline-none focus:border-cyan-300/60"
-            >
-              {languageOptions.map((lang) => (
-                <option key={lang.code} value={lang.code}>{lang.label}</option>
-              ))}
-            </select>
-
-            <button
-              onClick={createMeeting}
-              disabled={!meetingTitle.trim()}
-              className="rounded-2xl bg-cyan-300 px-5 py-3 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50 lg:col-span-2"
-            >
-              Create Meeting + Invite Link
-            </button>
+          <div className="mb-5">
+            <h2 className="text-xl font-semibold">Meeting Scheduler</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              Create one canonical Nexus Teams meeting record. Its code, invite
+              link, calendar entry, workspace, and database identity remain
+              synchronized across the platform.
+            </p>
           </div>
+
+          <CreateMeetingForm
+            teamId={teamId}
+            rooms={rooms.map((room: any) => ({
+              id: String(room.id),
+              name: String(room.name || "Meeting room"),
+            }))}
+            defaultRoomId={rooms[0]?.id ? String(rooms[0].id) : ""}
+            defaultLanguage={team.default_language || "en"}
+            defaultLanguageMode={
+              team.translation_enabled ? "multi" : "single"
+            }
+            defaultOrganizer="John"
+            defaultTitle=""
+            submitLabel="Create Meeting + Invite Link"
+            onCreated={async (meeting: NexusMeetingRecord) => {
+              setActionMessage(
+                `Meeting created: ${meeting.meeting_code}`
+              );
+              await loadTeam();
+            }}
+          />
 
           <div className="mt-6">
             <h3 className="font-semibold">Upcoming Meetings</h3>
