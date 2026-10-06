@@ -16,6 +16,11 @@ import {
   resolveMeetingRequestContext,
 } from "@/lib/riomind/teams/meeting-request-context";
 
+import { meetingEngine } from "@/lib/riomind/meetings/engine";
+import type {
+  ParticipantRole,
+} from "@/lib/riomind/meetings/types";
+
 export const dynamic = "force-dynamic";
 
 type RouteContext = {
@@ -23,6 +28,36 @@ type RouteContext = {
     meetingCode: string;
   }>;
 };
+
+const MEETING_PARTICIPANT_ROLES: readonly ParticipantRole[] = [
+  "owner",
+  "host",
+  "cohost",
+  "presenter",
+  "participant",
+  "viewer",
+  "guest",
+];
+
+function isMeetingParticipantRole(
+  value: string
+): value is ParticipantRole {
+  return MEETING_PARTICIPANT_ROLES.includes(
+    value as ParticipantRole
+  );
+}
+
+function toIsoString(
+  value: string | Date | null
+): string {
+  if (!value) {
+    return new Date().toISOString();
+  }
+
+  return value instanceof Date
+    ? value.toISOString()
+    : value;
+}
 
 function jsonError(
   message: string,
@@ -133,6 +168,18 @@ export async function GET(
         );
       }
 
+      try {
+        await meetingEngine.removeParticipant(
+          meetingCode,
+          participant.runtime_id
+        );
+      } catch (error) {
+        console.error(
+          "[MeetingEngine] Failed to remove participant runtime",
+          error
+        );
+      }
+
       return NextResponse.json({
         ok: true,
         participant,
@@ -226,6 +273,62 @@ export async function POST(
             ),
         }
       );
+
+    try {
+      await meetingEngine.ensureMeetingLoaded(meetingCode);
+
+      await meetingEngine.addParticipant(
+        meetingCode,
+        {
+          id: participant.runtime_id,
+          displayName:
+            participant.display_name ??
+            "Participant",
+          email:
+            participant.email ??
+            undefined,
+          role: isMeetingParticipantRole(
+            participant.participant_role
+          )
+            ? participant.participant_role
+            : "participant",
+          status: "connected",
+          joinedAt: toIsoString(
+            participant.joined_at
+          ),
+          leftAt: undefined,
+          cameraEnabled:
+            participant.camera_enabled,
+          microphoneEnabled:
+            participant.microphone_enabled,
+          screenSharing:
+            participant.screen_sharing,
+          handRaised:
+            participant.hand_raised,
+          preferredLanguage:
+            participant.preferred_language ??
+            "en",
+          metadata: {
+            ...participant.metadata,
+            runtimeMetadata:
+              participant.runtime_metadata,
+            accessType:
+              participant.access_type,
+            presenceStatus:
+              participant.presence_status,
+            connectionStatus:
+              participant.connection_status,
+            connectionQuality:
+              participant.connection_quality,
+          },
+        }
+      );
+    } catch (error) {
+      console.error(
+        "[MeetingEngine] Failed to register participant runtime",
+        error
+      );
+    }
 
     return NextResponse.json(
       {

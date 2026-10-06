@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getReadyRioMindTeamsPool } from "@/lib/riomind/teams/db";
+import { meetingEngine } from "@/lib/riomind/meetings/engine";
+import { meetingRoomFromDatabaseRow } from "@/lib/riomind/meetings/repository";
 import {
   generateUniqueMeetingCode,
   meetingApplicationPath,
@@ -222,11 +224,57 @@ export async function POST(
 
     const meeting = result.rows[0];
 
+    let runtimeRegistered = false;
+    let runtimeError: string | null = null;
+
+    try {
+      const runtimeMeeting = meetingEngine.registerMeeting(
+        meetingRoomFromDatabaseRow(meeting)
+      );
+
+      await meetingEngine.publish(
+        runtimeMeeting.meetingCode,
+        "meeting.created",
+        {
+          meetingId: runtimeMeeting.id,
+          meetingCode: runtimeMeeting.meetingCode,
+          title: runtimeMeeting.title,
+          lifecycle: runtimeMeeting.lifecycle,
+          teamId: meeting.team_id,
+          roomId: meeting.room_id,
+          meetingType: meeting.meeting_type,
+          ownerUserId: meeting.owner_user_id,
+          applicationPath: meeting.meeting_link,
+          invitePath: meeting.invite_link,
+        }
+      );
+
+      runtimeRegistered = true;
+    } catch (runtimeRegistrationError) {
+      runtimeError =
+        runtimeRegistrationError instanceof Error
+          ? runtimeRegistrationError.message
+          : "Unknown meeting runtime registration error";
+
+      console.error(
+        "[Nexus Meeting Engine] Meeting was persisted but runtime registration failed",
+        {
+          meetingId: meeting.id,
+          meetingCode: meeting.meeting_code,
+          error: runtimeError,
+        }
+      );
+    }
+
     return NextResponse.json(
       {
         ok: true,
         created: true,
         meeting,
+        runtime: {
+          registered: runtimeRegistered,
+          error: runtimeError,
+        },
         identity: {
           id: meeting.id,
           meetingCode: meeting.meeting_code,

@@ -1,8 +1,56 @@
 "use client";
 
+import SimpleMeetingShell, {
+  type MeetingSurface,
+  type ShareTarget,
+} from "./modules/meeting/SimpleMeetingShell";
+
 import NexusTeamsLiveIntelligencePanel from "@/components/nexus/teams/NexusTeamsLiveIntelligencePanel";
 import { MeetingToolbar } from "./modules/toolbar";
 import { MeetingStage } from "./modules/stage";
+import {
+   VoiceWorkspace,
+} from "./modules/workspace/voice";
+import LiveVoiceRuntime, {
+  type LiveVoiceStatus,
+  type LiveVoiceTranscript,
+} from "./modules/voice/LiveVoiceRuntime";
+import {
+  ChatWorkspace,
+} from "./modules/workspace/chat";
+import {
+  ParticipantsWorkspace,
+} from "./modules/workspace/participants";
+import {
+  FilesWorkspace,
+} from "./modules/workspace/files";
+import {
+  WorkspaceNavigation,
+} from "./modules/workspace/navigation";
+import type {
+  WorkspaceId,
+} from "./modules/workspace/navigation";
+import {
+  NotesWorkspace,
+} from "./modules/workspace/notes";
+import {
+  DocumentsWorkspace,
+} from "./modules/workspace/documents";
+import {
+  WhiteboardWorkspace,
+} from "./modules/workspace/whiteboard";
+import {
+  TasksWorkspace,
+} from "./modules/workspace/tasks";
+import {
+  PollsWorkspace,
+} from "./modules/workspace/polls";
+import {
+  AppsWorkspace,
+} from "./modules/workspace/apps";
+import {
+  buildStage,
+} from "@/lib/riomind/meetings/stage-engine";
 import { StageHeader } from "./modules/stage/header";
 import { LobbyStage } from "./modules/stage/lobby";
 import { ParticipantTile } from "./modules/stage/participants";
@@ -101,7 +149,6 @@ async function safeJson(url: string) {
   }
 }
 
-
 function MoreToolShell({
   title,
   onClose,
@@ -134,7 +181,10 @@ export default function NexusTeamsV2Page() {
   const [rightPanel, setRightPanel] = useState<
     "notes" | "files" | null
   >(null);
-  const [bottomPanel, setBottomPanel] = useState<"voice" | "chat" | "participants" | "files" | "ai">("voice");
+  const [
+    bottomPanel,
+    setBottomPanel,
+  ] = useState<WorkspaceId>("voice");
   const [appView, setAppView] = useState<"meeting" | "calendar">("meeting");
   const [stageMode, setStageMode] = useState<
     "participants" | "presentation"
@@ -163,6 +213,10 @@ export default function NexusTeamsV2Page() {
         role?: string;
         removed?: boolean;
         pinned?: boolean;
+        spotlighted?: boolean;
+        cameraEnabled?: boolean;
+        screenSharing?: boolean;
+        inLobby?: boolean;
         avatarUrl?: string;
       }
     >
@@ -283,6 +337,61 @@ export default function NexusTeamsV2Page() {
     tags?: string[];
   };
 
+
+function mapPersistentMeetingIntelligenceRecord(
+  record: any
+): MeetingIntelligenceRecord {
+  const status = String(record?.status || "detected");
+
+  return {
+    id: String(record?.id || `${record?.intelligence_type || "insight"}-${record?.detected_at || Date.now()}`),
+    type: record?.intelligence_type,
+    title: String(record?.title || "Meeting intelligence"),
+    detail: String(record?.detail || ""),
+    speaker: record?.speaker_name || undefined,
+    owner: record?.owner_name || undefined,
+    due: record?.due_at || undefined,
+    confidence:
+      typeof record?.confidence === "number"
+        ? record.confidence
+        : undefined,
+    status:
+      status === "accepted"
+        ? "accepted"
+        : status === "resolved" ||
+          status === "completed" ||
+          status === "answered"
+        ? "resolved"
+        : status === "dismissed" || status === "archived"
+        ? "dismissed"
+        : "detected",
+    createdAt: String(
+      record?.detected_at ||
+        record?.created_at ||
+        new Date().toISOString()
+    ),
+    updatedAt: record?.updated_at || undefined,
+    resolvedAt: record?.resolved_at || undefined,
+    meetingId: record?.meeting_id || undefined,
+    participantId: record?.participant_id || undefined,
+    sourceType:
+      record?.source_type === "chat" ||
+      record?.source_type === "transcript"
+        ? record.source_type
+        : undefined,
+    sourceId: record?.source_id || undefined,
+    sourceText: record?.source_text || undefined,
+    detectedBy:
+      record?.detected_by === "rules" ||
+      record?.detected_by === "manual" ||
+      record?.detected_by === "seed"
+        ? record.detected_by
+        : "riomind-core",
+    tags: Array.isArray(record?.tags) ? record.tags : [],
+  };
+}
+
+
   const [assistantSection, setAssistantSection] = useState<
     "summary" | "decisions" | "actions" | "risks" | "questions"
   >("summary");
@@ -359,6 +468,9 @@ export default function NexusTeamsV2Page() {
   const [detectedCommitments, setDetectedCommitments] = useState<
     MeetingIntelligenceRecord[]
   >([]);
+
+  const [intelligenceSyncStatus, setIntelligenceSyncStatus] =
+    useState<"syncing" | "synced" | "error">("syncing");
 
   const [intelligenceTimeline, setIntelligenceTimeline] = useState<
     Array<{
@@ -439,12 +551,18 @@ export default function NexusTeamsV2Page() {
           setLiveParticipants(
             json.participants.map((participant: any) => ({
               name:
-                participant.display_name ||
-                participant.user_id ||
-                "Participant",
+                participant.participant_role === "owner"
+                  ? meeting?.owner_display_name ||
+                    participant.display_name ||
+                    "Owner"
+                  : participant.display_name ||
+                    participant.user_id ||
+                    "Participant",
 
               role:
-                participant.role || "Participant",
+                participant.participant_role ||
+                participant.role ||
+                "participant",
 
               status:
                 participant.presence_status || "online",
@@ -494,6 +612,105 @@ export default function NexusTeamsV2Page() {
   const speakingParticipant = liveParticipants.find((participant) => participant.speaking);
   const languageModeLabel = speakingParticipant ? "Speaking..." : "Listening...";
 
+
+  useEffect(() => {
+    if (!meetingCode) return;
+
+    let cancelled = false;
+    let summaryLoaded = false;
+
+    async function syncPersistentIntelligence() {
+      try {
+        setIntelligenceSyncStatus("syncing");
+
+        const response = await fetch(
+          `/api/riomind/meetings/${encodeURIComponent(meetingCode)}/intelligence?limit=500`,
+          { cache: "no-store" }
+        );
+
+        if (!response.ok) {
+          throw new Error("Persistent meeting intelligence request failed.");
+        }
+
+        const payload = await response.json();
+        const records: MeetingIntelligenceRecord[] =
+          Array.isArray(payload?.records)
+            ? payload.records.map(mapPersistentMeetingIntelligenceRecord)
+            : [];
+
+        if (cancelled) return;
+
+        setDetectedDecisions(
+          records.filter((record) => record.type === "decision")
+        );
+        setDetectedActions(
+          records.filter((record) => record.type === "action")
+        );
+        setDetectedRisks(
+          records.filter((record) => record.type === "risk")
+        );
+        setOpenMeetingQuestions(
+          records.filter((record) => record.type === "question")
+        );
+        setDetectedCommitments(
+          records.filter((record) => record.type === "commitment")
+        );
+
+        setIntelligenceTimeline(
+          records
+            .map((record) => ({
+              id: record.id,
+              type: record.type || "insight",
+              sourceType: record.sourceType || "system",
+              speaker: record.speaker,
+              title: record.title,
+              detectedAt: record.createdAt,
+            }))
+            .slice(0, 100)
+        );
+
+        if (!summaryLoaded) {
+          summaryLoaded = true;
+
+          try {
+            const summaryResponse = await fetch(
+              `/api/riomind/meetings/${encodeURIComponent(meetingCode)}/live-intelligence`,
+              { cache: "no-store" }
+            );
+
+            if (summaryResponse.ok) {
+              const summaryPayload = await summaryResponse.json();
+              const runtimeSummary = summaryPayload?.intelligence?.liveSummary;
+
+              if (!cancelled && typeof runtimeSummary === "string" && runtimeSummary.trim()) {
+                setLiveMeetingSummary(runtimeSummary);
+              }
+            }
+          } catch (summaryError) {
+            console.error("[live-meeting-intelligence-summary]", summaryError);
+          }
+        }
+
+        setIntelligenceSyncStatus("synced");
+      } catch (error) {
+        if (cancelled) return;
+        console.error("[meeting-intelligence-sync]", error);
+        setIntelligenceSyncStatus("error");
+      }
+    }
+
+    syncPersistentIntelligence();
+
+    const timer = window.setInterval(
+      syncPersistentIntelligence,
+      3000
+    );
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [meetingCode]);
 
   useEffect(() => {
     intelligenceSessionReady.current = false;
@@ -616,6 +833,107 @@ export default function NexusTeamsV2Page() {
   const [videoPlaybackType, setVideoPlaybackType] = useState<"none" | "file" | "embed" | "direct">("none");
   const [videoPlaybackTitle, setVideoPlaybackTitle] = useState("");
 
+  const meetingSurfaceFromWorkspace = (): MeetingSurface => {
+    switch (bottomPanel) {
+      case "participants":
+        return "people";
+      case "ai":
+        return "riomind";
+      case "files":
+        return "share";
+      case "voice":
+      default:
+        return "talk";
+    }
+  };
+
+  const handleMeetingSurfaceChange = (surface: MeetingSurface) => {
+    switch (surface) {
+      case "talk":
+        setBottomPanel("voice");
+        break;
+
+      case "people":
+        setBottomPanel("participants");
+        break;
+
+      case "riomind":
+        setBottomPanel("ai");
+        break;
+
+      case "share":
+        setBottomPanel("files");
+        break;
+
+      case "more":
+        break;
+    }
+  };
+
+  const handleMeetingShellShare = (target: ShareTarget) => {
+    switch (target) {
+      case "screen":
+        setShareSource("Screen");
+        setToolActionStatus("Screen sharing selected");
+        break;
+
+      case "video":
+        setShareSource("Video");
+        setToolActionStatus("Video sharing selected");
+        break;
+
+      case "document":
+        setBottomPanel("documents");
+        setToolActionStatus("Document sharing selected");
+        break;
+
+      case "file":
+        setBottomPanel("files");
+        setToolActionStatus("File sharing selected");
+        break;
+    }
+  };
+
+  const handleMeetingShellMore = (action: string) => {
+    switch (action) {
+      case "Notes":
+        setBottomPanel("notes");
+        break;
+
+      case "Tasks":
+        setBottomPanel("tasks");
+        break;
+
+      case "Polls":
+        setBottomPanel("polls");
+        break;
+
+      case "Whiteboard":
+        setBottomPanel("whiteboard");
+        break;
+
+      case "Documents":
+        setBottomPanel("documents");
+        break;
+
+      case "Apps":
+        setBottomPanel("apps");
+        break;
+
+      case "Language":
+        setBottomPanel("voice");
+        break;
+
+      default:
+        setToolActionStatus(action);
+        break;
+    }
+  };
+
+  const handleMeetingShellLeave = () => {
+    setMeetingLifecycleDialog("leave");
+  };
+
   // 🧠 Nexus Unified Presentation Kernel (STEP 1)
   const [meetingAssetUrl, setMeetingAssetUrl] = useState("");
   const [meetingAssetName, setMeetingAssetName] = useState("");
@@ -662,14 +980,14 @@ useEffect(() => {
     try {
       let clientSessionId =
         clientSessionKey
-          ? sessionStorage.getItem(clientSessionKey)
+          ? localStorage.getItem(clientSessionKey)
           : null;
 
       if (!clientSessionId) {
         clientSessionId = generateClientSessionId();
 
         if (clientSessionKey) {
-          sessionStorage.setItem(
+          localStorage.setItem(
             clientSessionKey,
             clientSessionId
           );
@@ -678,7 +996,7 @@ useEffect(() => {
 
       const savedRuntimeId =
         runtimeStorageKey
-          ? sessionStorage.getItem(runtimeStorageKey)
+          ? localStorage.getItem(runtimeStorageKey)
           : null;
 
       const response = await fetch(
@@ -715,7 +1033,7 @@ useEffect(() => {
         setRuntimeId(json.runtimeId);
 
         if (runtimeStorageKey) {
-          sessionStorage.setItem(
+          localStorage.setItem(
             runtimeStorageKey,
             json.runtimeId
           );
@@ -1048,7 +1366,35 @@ useEffect(() => {
   }
 
   function participantRole(participant: any) {
-    return participant?.role || participant?.meeting_role || participant?.status || "Participant";
+    const rawRole =
+      participant?.participant_role ||
+      participant?.role ||
+      participant?.meeting_role ||
+      participantControlState[
+        participantName(participant)
+      ]?.role ||
+      participant?.status ||
+      "Participant";
+
+    const normalized = String(rawRole)
+      .trim()
+      .toLowerCase();
+
+    const labels: Record<string, string> = {
+      owner: "Owner",
+      host: "Host",
+      cohost: "Co-host",
+      "co-host": "Co-host",
+      admin: "Admin",
+      presenter: "Presenter",
+      participant: "Participant",
+      viewer: "Viewer",
+      guest: "Guest",
+      assistant: "Assistant",
+      ai: "AI",
+    };
+
+    return labels[normalized] || String(rawRole);
   }
 
   function participantAvatar(participant: any) {
@@ -1288,66 +1634,142 @@ useEffect(() => {
     return "Recording disabled";
   }
 
-  const prioritizedMeetingParticipants = [...meetingParticipants].sort((a: any, b: any) => {
-    const aSpeaking = isSpeakingParticipant(a) ? 1 : 0;
-    const bSpeaking = isSpeakingParticipant(b) ? 1 : 0;
+  const stageEligibleParticipants =
+    meetingParticipants.filter(
+      (participant: any, index: number) => {
+        const name = participantName(
+          participant,
+          index
+        );
 
-    if (aSpeaking !== bSpeaking) return bSpeaking - aSpeaking;
+        const controls =
+          participantControlState[name] || {};
 
-    const aHost = isHostParticipant(a) ? 1 : 0;
-    const bHost = isHostParticipant(b) ? 1 : 0;
+        return (
+          controls.removed !== true &&
+          controls.inLobby !== true
+        );
+      }
+    );
 
-    if (aHost !== bHost) return bHost - aHost;
+  const stageSourceById = new Map<
+    string,
+    any
+  >();
 
-    const aAssistant = isAssistantParticipant(a) ? 1 : 0;
-    const bAssistant = isAssistantParticipant(b) ? 1 : 0;
+  const stageModelParticipants =
+    stageEligibleParticipants.map(
+      (participant: any, index: number) => {
+        const name = participantName(
+          participant,
+          index
+        );
 
-    return aAssistant - bAssistant;
-  });
+        const id = participantIdentity(
+          participant,
+          index
+        );
 
-  const participantStageLimit =
-    meetingParticipants.length <= 30
-      ? meetingParticipants.length
-      : meetingParticipants.length <= 50
-      ? 30
-      : 24;
+        const controls =
+          participantControlState[name] || {};
 
-  const stageParticipants = prioritizedMeetingParticipants.slice(
-    0,
-    participantStageLimit
+        stageSourceById.set(id, participant);
+
+        return {
+          id,
+          name,
+          role: participantRole(
+            participant
+          ).toLowerCase(),
+          speaking:
+            isSpeakingParticipant(
+              participant
+            ),
+          spotlighted:
+            controls.spotlighted === true,
+          pinned:
+            controls.pinned === true,
+          screenSharing:
+            controls.screenSharing ??
+            Boolean(
+              participant?.screen_sharing ||
+              participant?.screenSharing ||
+              participant?.sharing_screen
+            ),
+          inLobby:
+            controls.inLobby === true,
+        };
+      }
+    );
+
+  const computedStage = buildStage(
+    stageModelParticipants
   );
 
+  const participantStageLimit =
+    computedStage.participants.length <= 16
+      ? computedStage.participants.length
+      : computedStage.participants.length <= 25
+      ? 20
+      : computedStage.participants.length <= 49
+      ? 28
+      : 35;
+
+  const stageParticipants =
+    computedStage.participants
+      .slice(0, participantStageLimit)
+      .map((stageParticipant) =>
+        stageSourceById.get(
+          stageParticipant.id
+        )
+      )
+      .filter(Boolean);
+
   const hiddenParticipantCount = Math.max(
-    meetingParticipants.length - stageParticipants.length,
+    computedStage.participants.length -
+      stageParticipants.length,
     0
   );
 
-  const participantGridClass =
-    meetingParticipants.length <= 2
-      ? "grid-cols-1 sm:grid-cols-2"
-      : meetingParticipants.length <= 6
-      ? "grid-cols-2 lg:grid-cols-3"
-      : meetingParticipants.length <= 12
-      ? "grid-cols-2 md:grid-cols-3 xl:grid-cols-4"
-      : meetingParticipants.length <= 30
-      ? "grid-cols-3 md:grid-cols-4 xl:grid-cols-6"
-      : meetingParticipants.length <= 50
-      ? "grid-cols-4 md:grid-cols-6 xl:grid-cols-8"
-      : "grid-cols-5 md:grid-cols-8 xl:grid-cols-10";
+  const participantGridClass: string = {
+    single:
+      "mx-auto max-w-4xl grid-cols-1",
+    two:
+      "grid-cols-1 md:grid-cols-2",
+    "grid-2":
+      "grid-cols-1 sm:grid-cols-2",
+    "grid-3":
+      "grid-cols-2 lg:grid-cols-3",
+    "grid-4":
+      "grid-cols-2 md:grid-cols-3 xl:grid-cols-4",
+    "grid-5":
+      "grid-cols-3 md:grid-cols-4 xl:grid-cols-5",
+    "grid-7":
+      "grid-cols-3 md:grid-cols-5 xl:grid-cols-7",
+  }[computedStage.layout];
+
+  const visibleStageCount =
+    stageParticipants.length;
 
   const participantTilePadding =
-    meetingParticipants.length <= 6
-      ? "p-5"
-      : meetingParticipants.length <= 30
-      ? "p-4"
-      : "p-2.5";
+    computedStage.layout === "single"
+      ? "min-h-[300px] p-8"
+      : visibleStageCount <= 4
+      ? "min-h-[220px] p-6"
+      : visibleStageCount <= 9
+      ? "min-h-[170px] p-5"
+      : visibleStageCount <= 25
+      ? "min-h-[140px] p-4"
+      : "min-h-[112px] p-2.5";
 
   const participantAvatarSize =
-    meetingParticipants.length <= 6
+    computedStage.layout === "single"
+      ? "h-32 w-32 text-4xl"
+      : visibleStageCount <= 4
       ? "h-24 w-24 text-2xl"
-      : meetingParticipants.length <= 12
+      : visibleStageCount <= 9
       ? "h-20 w-20 text-xl"
-      : meetingParticipants.length <= 30
+      : visibleStageCount <= 25
       ? "h-16 w-16 text-lg"
       : "h-11 w-11 text-sm";
 
@@ -1453,6 +1875,12 @@ useEffect(() => {
       | "removeSpeaker"
       | "removeParticipant"
       | "promote"
+      | "makeCohost"
+      | "makePresenter"
+      | "spotlight"
+      | "moveToLobby"
+      | "disableCamera"
+      | "stopScreenShare"
       | "pin"
       | "message"
       | "profile"
@@ -1530,6 +1958,69 @@ useEffect(() => {
         };
       }
 
+      if (action === "makeCohost") {
+        return {
+          ...current,
+          [name]: {
+            ...existing,
+            role: "Co-host",
+          },
+        };
+      }
+
+      if (action === "makePresenter") {
+        return {
+          ...current,
+          [name]: {
+            ...existing,
+            role: "Presenter",
+          },
+        };
+      }
+
+      if (action === "spotlight") {
+        return {
+          ...current,
+          [name]: {
+            ...existing,
+            spotlighted: !existing.spotlighted,
+          },
+        };
+      }
+
+      if (action === "moveToLobby") {
+        return {
+          ...current,
+          [name]: {
+            ...existing,
+            speaking: false,
+            mic: "muted",
+            hand: false,
+            inLobby: true,
+          },
+        };
+      }
+
+      if (action === "disableCamera") {
+        return {
+          ...current,
+          [name]: {
+            ...existing,
+            cameraEnabled: false,
+          },
+        };
+      }
+
+      if (action === "stopScreenShare") {
+        return {
+          ...current,
+          [name]: {
+            ...existing,
+            screenSharing: false,
+          },
+        };
+      }
+
       if (action === "pin") {
         return {
           ...current,
@@ -1552,6 +2043,12 @@ useEffect(() => {
       removeSpeaker: "removed from speaker list",
       removeParticipant: "removed from meeting",
       promote: "promoted to admin",
+      makeCohost: "made co-host",
+      makePresenter: "made presenter",
+      spotlight: "spotlight status changed",
+      moveToLobby: "moved to the lobby",
+      disableCamera: "camera disabled",
+      stopScreenShare: "screen sharing stopped",
       pin: "pin status changed",
       more: "more controls opened",
       message: "message panel ready",
@@ -1606,6 +2103,80 @@ useEffect(() => {
 
   function openParticipantProfile(participantNameValue: string) {
     setProfileViewerName(participantNameValue);
+    setOpenParticipantMenu(null);
+  }
+
+  function openParticipantNotes(
+    participantNameValue: string
+  ) {
+    setRightPanel("notes");
+    setBottomPanel("ai");
+    setToolActionStatus(
+      `Notes opened for ${participantNameValue}.`
+    );
+    setOpenParticipantMenu(null);
+  }
+
+  function openParticipantLanguage(
+    participantNameValue: string
+  ) {
+    setBottomPanel("participants");
+    setToolActionStatus(
+      `Language controls opened for ${participantNameValue}.`
+    );
+    setOpenParticipantMenu(null);
+  }
+
+  function openParticipantAssistant(
+    participantNameValue: string,
+    presenterCoach = false
+  ) {
+    setBottomPanel("ai");
+    setAssistantAskOpen(true);
+    setAssistantQuestion(
+      presenterCoach
+        ? `Coach ${participantNameValue} for this presentation.`
+        : `Help me understand ${participantNameValue}'s contributions in this meeting.`
+    );
+    setAssistantNotice(
+      presenterCoach
+        ? `AI Presenter Coach opened for ${participantNameValue}.`
+        : `Private AI Assistant context opened for ${participantNameValue}.`
+    );
+    setOpenParticipantMenu(null);
+  }
+
+  function openParticipantSummary(
+    participantNameValue: string
+  ) {
+    setBottomPanel("ai");
+    setAssistantAskOpen(true);
+    setAssistantQuestion(
+      `Summarize ${participantNameValue}'s contributions, decisions, actions, risks, and commitments in this meeting.`
+    );
+    setAssistantNotice(
+      `AI participant summary prepared for ${participantNameValue}.`
+    );
+    setOpenParticipantMenu(null);
+  }
+
+  function openParticipantActivity(
+    participantNameValue: string
+  ) {
+    setMoreToolPanel("Participant Activity");
+    setToolActionStatus(
+      `Participant activity opened for ${participantNameValue}.`
+    );
+    setOpenParticipantMenu(null);
+  }
+
+  function openParticipantPermissions(
+    participantNameValue: string
+  ) {
+    setMoreToolPanel("Participant Permissions");
+    setToolActionStatus(
+      `Permissions opened for ${participantNameValue}.`
+    );
     setOpenParticipantMenu(null);
   }
 
@@ -1906,7 +2477,7 @@ useEffect(() => {
     });
   }
 
-  function ingestMeetingDetections(
+  async function ingestMeetingDetections(
     detections: MeetingDetection[]
   ) {
     const canonicalDetections =
@@ -1916,145 +2487,55 @@ useEffect(() => {
       return;
     }
 
-    canonicalDetections.forEach((detection) => {
-      if (detection.sourceType === "chat") {
-        processedChatIntelligenceIds.current.add(
-          String(detection.sourceId)
-        );
-      }
+    try {
+      await Promise.all(
+        canonicalDetections.map(async (detection) => {
+          const response = await fetch(
+            `/api/riomind/meetings/${encodeURIComponent(meetingCode)}/intelligence`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                intelligenceType: detection.type,
+                title: detection.title,
+                detail: detection.detail,
+                speakerId: detection.participantId || null,
+                speakerName: detection.speaker || null,
+                participantId: detection.participantId || null,
+                sourceType: detection.sourceType,
+                sourceId: detection.sourceId,
+                sourceText: detection.sourceText,
+                sourceLanguage: detection.language || null,
+                confidence: detection.confidence ?? null,
+                detectedBy: detection.detectedBy || "riomind-core",
+                tags: detection.tags || [],
+              }),
+            }
+          );
 
-      if (detection.sourceType === "transcript") {
-        processedTranscriptIntelligenceIds.current.add(
-          String(detection.sourceId)
-        );
-      }
-      if (detection.type === "decision") {
-        appendUniqueIntelligenceRecord(
-          setDetectedDecisions,
-          detection
-        );
-      }
-
-      if (detection.type === "action") {
-        appendUniqueIntelligenceRecord(
-          setDetectedActions,
-          detection
-        );
-      }
-
-      if (detection.type === "risk") {
-        appendUniqueIntelligenceRecord(
-          setDetectedRisks,
-          detection
-        );
-      }
-
-      if (detection.type === "question") {
-        appendUniqueIntelligenceRecord(
-          setOpenMeetingQuestions,
-          detection
-        );
-      }
-
-      if (detection.type === "commitment") {
-        appendUniqueIntelligenceRecord(
-          setDetectedCommitments,
-          detection
-        );
-      }
-
-      setIntelligenceTimeline((events) => {
-        const incomingSignature = [
-          normalizeIntelligenceSignature(detection.type),
-          normalizeIntelligenceSignature(detection.speaker),
-          normalizeIntelligenceSignature(detection.title),
-        ].join("|");
-
-        const duplicateExists = events.some((event) => {
-          if (event.id === detection.id) {
-            return true;
+          if (!response.ok) {
+            throw new Error(
+              `Failed to persist ${detection.type} intelligence.`
+            );
           }
-
-          const existingSignature = [
-            normalizeIntelligenceSignature(event.type),
-            normalizeIntelligenceSignature(event.speaker),
-            normalizeIntelligenceSignature(event.title),
-          ].join("|");
-
-          return existingSignature === incomingSignature;
-        });
-
-        if (duplicateExists) {
-          return events;
-        }
-
-        return [
-          {
-            id: detection.id,
-            type: detection.type,
-            sourceType: detection.sourceType,
-            speaker: detection.speaker,
-            title: detection.title,
-            detectedAt: detection.createdAt,
-          },
-          ...events,
-        ].slice(0, 100);
-      });
-
-      appendMeetingAuditEvent(
-        "meeting_intelligence_detected",
-        detection.id,
-        {
-          meetingCode,
-          intelligenceType: detection.type,
-          sourceType: detection.sourceType,
-          sourceId: detection.sourceId,
-          confidence: detection.confidence,
-          detectedBy: detection.detectedBy,
-        }
+        })
       );
 
-      const section =
-        detection.type === "decision"
-          ? "decisions"
-          : detection.type === "risk"
-          ? "risks"
-          : detection.type === "question"
-          ? "questions"
-          : "actions";
-
-      setAssistantSuggestions((suggestions) => {
-        const suggestionId =
-          `detected-source-${detection.sourceType}-${detection.sourceId}`;
-
-        if (
-          suggestions.some(
-            (suggestion) => suggestion.id === suggestionId
-          )
-        ) {
-          return suggestions;
-        }
-
-        return [
-          {
-            id: suggestionId,
-            title: "New meeting intelligence detected",
-            detail:
-              "Nexus detected one or more decisions, actions, commitments, risks, or questions from this contribution.",
-            action: "Review",
-            kind: section,
-            dismissed: false,
-          },
-          ...suggestions,
-        ].slice(0, 20);
-      });
-    });
-
-    setAssistantNotice(
-      `${canonicalDetections.length} new intelligence item${
-        canonicalDetections.length === 1 ? "" : "s"
-      } detected.`
-    );
+      setIntelligenceSyncStatus("synced");
+      setAssistantNotice(
+        `${canonicalDetections.length} intelligence item${
+          canonicalDetections.length === 1 ? "" : "s"
+        } synchronized.`
+      );
+    } catch (error) {
+      console.error("[meeting-intelligence-persist]", error);
+      setIntelligenceSyncStatus("error");
+      setAssistantNotice(
+        "Meeting intelligence could not be synchronized with the persistent runtime."
+      );
+    }
   }
 
   function toggleExpandedChatMessage(messageId: string) {
@@ -2130,7 +2611,7 @@ useEffect(() => {
     });
   }
 
-  function updateIntelligenceRecord(
+  async function updateIntelligenceRecord(
     collection:
       | "decisions"
       | "actions"
@@ -2139,40 +2620,39 @@ useEffect(() => {
     id: string,
     status: MeetingIntelligenceRecord["status"]
   ) {
-    const updater = (
-      records: MeetingIntelligenceRecord[]
-    ) =>
-      records.map((record) =>
-        record.id === id ? { ...record, status } : record
+    try {
+      const response = await fetch(
+        `/api/riomind/meetings/${encodeURIComponent(meetingCode)}/intelligence/${encodeURIComponent(id)}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status }),
+        }
       );
 
-    if (collection === "decisions") {
-      setDetectedDecisions(updater);
-    }
-
-    if (collection === "actions") {
-      setDetectedActions(updater);
-    }
-
-    if (collection === "risks") {
-      setDetectedRisks(updater);
-    }
-
-    if (collection === "questions") {
-      setOpenMeetingQuestions(updater);
-    }
-
-    appendMeetingAuditEvent(
-      `meeting_intelligence_${collection}_${status}`,
-      id,
-      {
-        meetingCode,
+      if (!response.ok) {
+        throw new Error("Persistent intelligence update failed.");
       }
-    );
 
-    setAssistantNotice(
-      `${collection.slice(0, -1)} marked ${status}.`
-    );
+      appendMeetingAuditEvent(
+        `meeting_intelligence_${collection}_${status}`,
+        id,
+        {
+          meetingCode,
+        }
+      );
+
+      setAssistantNotice(`${collection.slice(0, -1)} marked ${status}.`);
+      setIntelligenceSyncStatus("synced");
+    } catch (error) {
+      console.error("[meeting-intelligence-update]", error);
+      setIntelligenceSyncStatus("error");
+      setAssistantNotice(
+        "The persistent meeting intelligence record could not be updated."
+      );
+    }
   }
 
   function clearRuleGeneratedTestIntelligence() {
@@ -2241,48 +2721,43 @@ useEffect(() => {
     );
   }
 
-  function generateClosingSummary() {
-    const activeDecisions = detectedDecisions.filter(
-      (item) => item.status !== "dismissed"
-    );
+  async function generateClosingSummary() {
+    try {
+      const response = await fetch(
+        `/api/riomind/meetings/${encodeURIComponent(meetingCode)}/live-intelligence`,
+        { cache: "no-store" }
+      );
 
-    const activeActions = detectedActions.filter(
-      (item) => item.status !== "dismissed"
-    );
-
-    const activeRisks = detectedRisks.filter(
-      (item) =>
-        item.status !== "resolved" &&
-        item.status !== "dismissed"
-    );
-
-    const summary = [
-      `${humanParticipantCount} participants are active.`,
-      `${activeDecisions.length} decisions have been identified.`,
-      `${activeActions.length} action items are being tracked.`,
-      `${activeRisks.length} unresolved risks remain.`,
-      recordingActive
-        ? "Recording is active."
-        : "Recording is currently off.",
-      `Live translation is routing ${languageLabel(
-        sourceLanguage
-      )} into ${languageLabel(listenLanguage)}.`,
-    ].join(" ");
-
-    setLiveMeetingSummary(summary);
-    setAssistantSection("summary");
-    setAssistantNotice("Closing summary generated.");
-
-    appendMeetingAuditEvent(
-      "meeting_closing_summary_generated",
-      undefined,
-      {
-        meetingCode,
-        decisionCount: activeDecisions.length,
-        actionCount: activeActions.length,
-        riskCount: activeRisks.length,
+      if (!response.ok) {
+        throw new Error("Live meeting intelligence request failed.");
       }
-    );
+
+      const payload = await response.json();
+      const runtimeSummary = payload?.intelligence?.liveSummary;
+
+      if (typeof runtimeSummary === "string" && runtimeSummary.trim()) {
+        setLiveMeetingSummary(runtimeSummary);
+      }
+
+      setAssistantSection("summary");
+      setAssistantNotice("Live summary refreshed from the RioMind runtime.");
+      setIntelligenceSyncStatus("synced");
+
+      appendMeetingAuditEvent(
+        "meeting_closing_summary_generated",
+        undefined,
+        {
+          meetingCode,
+          source: "riomind-live-intelligence",
+        }
+      );
+    } catch (error) {
+      console.error("[live-meeting-summary]", error);
+      setIntelligenceSyncStatus("error");
+      setAssistantNotice(
+        "The live RioMind summary could not be refreshed."
+      );
+    }
   }
 
   function answerMeetingQuestion(questionValue?: string) {
@@ -3136,8 +3611,20 @@ useEffect(() => {
     listenLanguage,
   ]);
 
-
-  return (
+    return (
+  <SimpleMeetingShell
+    meetingCode={meetingCode}
+    meetingTitle={meeting?.title || meeting?.name || "Nexus Team Meeting"}
+    participantCount={humanParticipantCount}
+    activeSurface={meetingSurfaceFromWorkspace()}
+    onSurfaceChange={handleMeetingSurfaceChange}
+    muted={!meetingPresence.microphoneEnabled}
+    cameraOn={meetingPresence.cameraEnabled}
+    voiceConnected={meetingPresence.microphoneEnabled}
+    onLeave={handleMeetingShellLeave}
+    onShare={handleMeetingShellShare}
+    onMoreAction={handleMeetingShellMore}
+  >
     <main className="min-h-screen overflow-x-hidden bg-[#070d14] text-slate-100">
       <div className="grid min-h-screen min-w-0 grid-cols-[72px_170px_minmax(0,1fr)_280px]">
         <aside className="border-r border-white/10 bg-black/30 px-3 py-5">
@@ -4255,7 +4742,10 @@ useEffect(() => {
             </div>
           ) : null}
 
-          <MeetingStage>
+          <MeetingStage
+            participants={meetingParticipants}
+            participantControlState={participantControlState}
+          >
           <section className="mt-5 rounded-3xl border border-white/10 bg-[#050b12]/[0.05] p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -4403,6 +4893,32 @@ useEffect(() => {
                     {stageParticipants.map((participant: any, index: number) => {
                       const name = participantName(participant, index);
                       const role = participantRole(participant);
+                      const roleKey = role.toLowerCase();
+                      const targetIsOwner =
+                        roleKey === "owner";
+                      const targetIsHost =
+                        roleKey === "host" ||
+                        roleKey === "admin";
+                      const targetIsCohost =
+                        roleKey === "co-host" ||
+                        roleKey === "cohost";
+                      const targetIsPresenter =
+                        roleKey === "presenter";
+                      const targetIsParticipant =
+                        roleKey === "participant";
+                      const targetIsViewerOrGuest =
+                        roleKey === "viewer" ||
+                        roleKey === "guest";
+                      const isCurrentViewer =
+                        name === currentViewerName ||
+                        (
+                          participant?.participant_role === "owner" &&
+                          currentViewerIsMeetingOwner
+                        ) ||
+                        (
+                          roleKey === "owner" &&
+                          currentViewerIsMeetingOwner
+                        );
                       const avatar = participantAvatar(participant);
                       const assistant = isAssistantParticipant(participant);
                       const host = isHostParticipant(participant);
@@ -4412,11 +4928,24 @@ useEffect(() => {
                         participantControlState[name]?.mic ||
                         participant?.mic ||
                         (assistant ? "system" : "muted");
-                      const cameraActive = Boolean(
-                        participant?.camera ||
-                        participant?.camera_active ||
-                        participant?.video_enabled
-                      );
+                      const cameraActive =
+                        participantControlState[name]
+                          ?.cameraEnabled ??
+                        Boolean(
+                          participant?.camera_enabled ||
+                          participant?.camera ||
+                          participant?.camera_active ||
+                          participant?.video_enabled
+                        );
+
+                      const screenSharingActive =
+                        participantControlState[name]
+                          ?.screenSharing ??
+                        Boolean(
+                          participant?.screen_sharing ||
+                          participant?.screenSharing ||
+                          participant?.sharing_screen
+                        );
                       const translationActive =
                         assistant ||
                         Boolean(participant?.translation_enabled) ||
@@ -4446,237 +4975,361 @@ useEffect(() => {
                         openParticipantMenu === name ? null : name
                           )
                           }
-                          name={name}
-                          onViewProfile={() => openParticipantProfile(name)}
-                           onPin={() => {
-                             controlParticipant(name, "pin");
-                               setOpenParticipantMenu(null);
-                              }}
-                             >
+                        >
 
                            
-                              <div data-nexus-toolbar-dropdown className="absolute z-50 bottom-10 right-0 z-50 w-52 rounded-2xl border border-white/10 bg-[#101a25] p-2 text-left shadow-2xl">
-                                <button
-                                  onClick={() =>
-                                    openParticipantProfile(name)
-                                  }
-                                  className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
-                                >
-                                  👤 View profile
-                                </button>
+                          <div className="px-3 pb-2 pt-1">
+                            <div className="truncate text-sm font-black text-white">
+                              {name}
+                            </div>
+                            <div className="mt-0.5 text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">
+                              {role}
+                            </div>
+                          </div>
 
+                          <div className="mb-1 border-t border-white/10" />
+
+                          {currentViewerIsHostOrAdmin &&
+                          !assistant &&
+                          !isCurrentViewer ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  controlParticipant(name, "mute");
+                                  setOpenParticipantMenu(null);
+                                }}
+                                className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
+                              >
+                                🔇 Mute
+                              </button>
+
+                              {!targetIsOwner ? (
                                 <button
+                                  type="button"
                                   onClick={() => {
-                                    controlParticipant(name, "pin");
+                                    controlParticipant(
+                                      name,
+                                      "removeParticipant"
+                                    );
+                                    setOpenParticipantMenu(null);
+                                  }}
+                                  className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-red-200 hover:bg-red-300/[0.08]"
+                                >
+                                  ⛔ Remove
+                                </button>
+                              ) : null}
+
+                              {currentViewerIsMeetingOwner &&
+                              !targetIsOwner &&
+                              !targetIsCohost ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    controlParticipant(
+                                      name,
+                                      "makeCohost"
+                                    );
+                                    setOpenParticipantMenu(null);
+                                  }}
+                                  className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-purple-200 hover:bg-purple-300/[0.08]"
+                                >
+                                  👑 Make Co-host
+                                </button>
+                              ) : null}
+
+                              {!targetIsOwner &&
+                              !targetIsHost &&
+                              !targetIsPresenter ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    controlParticipant(
+                                      name,
+                                      "makePresenter"
+                                    );
+                                    setOpenParticipantMenu(null);
+                                  }}
+                                  className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-cyan-200 hover:bg-cyan-300/[0.08]"
+                                >
+                                  🎤 Make Presenter
+                                </button>
+                              ) : null}
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  controlParticipant(
+                                    name,
+                                    "spotlight"
+                                  );
+                                  setOpenParticipantMenu(null);
+                                }}
+                                className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
+                              >
+                                ⭐ Spotlight
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  controlParticipant(name, "pin");
+                                  setOpenParticipantMenu(null);
+                                }}
+                                className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
+                              >
+                                📌 Pin
+                              </button>
+
+                              {handRank ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      controlParticipant(
+                                        name,
+                                        "allowSpeak"
+                                      );
+                                      setOpenParticipantMenu(null);
+                                    }}
+                                    className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-emerald-200 hover:bg-emerald-300/[0.08]"
+                                  >
+                                    🎤 Allow to Speak
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      controlParticipant(
+                                        name,
+                                        "lowerHand"
+                                      );
+                                      setOpenParticipantMenu(null);
+                                    }}
+                                    className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-yellow-200 hover:bg-yellow-300/[0.08]"
+                                  >
+                                    ✋ Lower Hand
+                                  </button>
+                                </>
+                              ) : null}
+
+                              {!targetIsOwner ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    controlParticipant(
+                                      name,
+                                      "moveToLobby"
+                                    );
+                                    appendMeetingAuditEvent(
+                                      "participant_moved_to_lobby",
+                                      name,
+                                      {
+                                        meetingCode,
+                                        previousRole: role,
+                                      }
+                                    );
                                     setOpenParticipantMenu(null);
                                   }}
                                   className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
                                 >
-                                  📌 Pin locally
+                                  🚪 Move to Lobby
                                 </button>
+                              ) : null}
 
-                                {name === currentViewerName && !assistant ? (
-                                  <>
-                                    {!currentViewerIsHostOrAdmin ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setOpenParticipantMenu(null);
-                                          setMeetingLifecycleDialog("request-host");
-                                        }}
-                                        className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-purple-200 hover:bg-purple-300/[0.08]"
-                                      >
-                                        👑 Request host control
-                                      </button>
-                                    ) : null}
+                              {cameraActive ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    controlParticipant(
+                                      name,
+                                      "disableCamera"
+                                    );
+                                    appendMeetingAuditEvent(
+                                      "participant_camera_disabled",
+                                      name,
+                                      { meetingCode }
+                                    );
+                                    setOpenParticipantMenu(null);
+                                  }}
+                                  className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
+                                >
+                                  📷 Disable Camera
+                                </button>
+                              ) : null}
 
-                                    {currentViewerIsMeetingOwner &&
-                                    !currentViewerIsHostOrAdmin ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setOpenParticipantMenu(null);
-                                          setMeetingLifecycleDialog("owner-recovery");
-                                        }}
-                                        className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-yellow-200 hover:bg-yellow-300/[0.08]"
-                                      >
-                                        🛡️ Owner authority recovery
-                                      </button>
-                                    ) : null}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setOpenParticipantMenu(null);
-                                        chooseCurrentUserAvatar();
-                                      }}
-                                      className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-purple-200 hover:bg-purple-300/[0.08]"
-                                    >
-                                      🖼️ Change profile photo
-                                    </button>
+                              {screenSharingActive ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    controlParticipant(
+                                      name,
+                                      "stopScreenShare"
+                                    );
+                                    appendMeetingAuditEvent(
+                                      "participant_screen_share_stopped",
+                                      name,
+                                      { meetingCode }
+                                    );
+                                    setOpenParticipantMenu(null);
+                                  }}
+                                  className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
+                                >
+                                  🖥️ Stop Screen Share
+                                </button>
+                              ) : null}
 
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setOpenParticipantMenu(null);
-                                        document.querySelector<HTMLSelectElement>(
-                                          'select[value="' + listenLanguage + '"]'
-                                        )?.focus();
-                                      }}
-                                      className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-cyan-200 hover:bg-cyan-300/[0.08]"
-                                    >
-                                      🌐 Change language
-                                    </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openReportAbuse(name)
+                                }
+                                className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-yellow-200 hover:bg-yellow-300/[0.08]"
+                              >
+                                ⚠️ Report Participant
+                              </button>
 
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setOpenParticipantMenu(null);
-                                        setMeetingLifecycleDialog("leave");
-                                      }}
-                                      className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-red-200 hover:bg-red-300/[0.08]"
-                                    >
-                                      🚪 Leave meeting
-                                    </button>
-                                  </>
-                                ) : null}
+                              <div className="my-1 border-t border-white/10" />
+                            </>
+                          ) : null}
 
-                                {name !== currentViewerName && !assistant ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => openPrivateChat(name)}
-                                    className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-cyan-200 hover:bg-cyan-300/[0.08]"
-                                  >
-                                    💬 Chat privately
-                                  </button>
-                                ) : null}
+                          {!assistant && !isCurrentViewer ? (
+                            <button
+                              type="button"
+                              onClick={() => openPrivateChat(name)}
+                              className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-cyan-200 hover:bg-cyan-300/[0.08]"
+                            >
+                              💬 Private Chat
+                            </button>
+                          ) : null}
 
-                                {name !== currentViewerName && !assistant ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => openReportAbuse(name)}
-                                    className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-yellow-200 hover:bg-yellow-300/[0.08]"
-                                  >
-                                    ⚠️ Report abuse
-                                  </button>
-                                ) : null}
+                          {!assistant &&
+                          !targetIsViewerOrGuest ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openParticipantNotes(name)
+                              }
+                              className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
+                            >
+                              📝 Notes
+                            </button>
+                          ) : null}
 
-                                {currentViewerIsHostOrAdmin && !assistant ? (
-                                  <>
-                                    <div className="my-1 border-t border-white/10 px-3 pt-2 text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">
-                                      Host controls
-                                    </div>
+                          {!assistant ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openParticipantLanguage(name)
+                              }
+                              className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
+                            >
+                              🌍 Language
+                            </button>
+                          ) : null}
 
-                                    {name === currentViewerName ? (
-                                      <>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setOpenParticipantMenu(null);
-                                            setMeetingLifecycleDialog(
-                                              meetingLocked ? "unlock" : "lock"
-                                            );
-                                          }}
-                                          className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
-                                        >
-                                          {meetingLocked ? "🔓 Unlock meeting" : "🔒 Lock meeting"}
-                                        </button>
+                          {targetIsPresenter && !assistant ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openParticipantAssistant(
+                                  name,
+                                  true
+                                )
+                              }
+                              className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-purple-200 hover:bg-purple-300/[0.08]"
+                            >
+                              🎯 AI Presenter Coach
+                            </button>
+                          ) : null}
 
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setOpenParticipantMenu(null);
-                                            setMeetingLifecycleDialog(
-                                              recordingActive ? "record-stop" : "record-start"
-                                            );
-                                          }}
-                                          className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
-                                        >
-                                          {recordingActive ? "⏹ Stop recording" : "⏺ Start recording"}
-                                        </button>
+                          {!assistant ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openParticipantAssistant(name)
+                              }
+                              className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-purple-200 hover:bg-purple-300/[0.08]"
+                            >
+                              🤖 AI Assistant
+                            </button>
+                          ) : null}
 
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setOpenParticipantMenu(null);
-                                            setMeetingLifecycleDialog("transfer-host");
-                                          }}
-                                          className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-purple-200 hover:bg-purple-300/[0.08]"
-                                        >
-                                          👑 Transfer host
-                                        </button>
+                          {currentViewerIsHostOrAdmin &&
+                          !assistant &&
+                          !isCurrentViewer ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openParticipantSummary(name)
+                                }
+                                className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-purple-200 hover:bg-purple-300/[0.08]"
+                              >
+                                🧠 AI Participant Summary
+                              </button>
 
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setOpenParticipantMenu(null);
-                                            setMeetingLifecycleDialog("end");
-                                          }}
-                                          className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-red-200 hover:bg-red-300/[0.08]"
-                                        >
-                                          ⛔ End meeting for everyone
-                                        </button>
-                                      </>
-                                    ) : null}
-                                    {handRank ? (
-                                      <>
-                                        <button
-                                          onClick={() => {
-                                            controlParticipant(name, "allowSpeak");
-                                            setOpenParticipantMenu(null);
-                                          }}
-                                          className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-emerald-200 hover:bg-emerald-300/[0.08]"
-                                        >
-                                          🎤 Allow to speak
-                                        </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openParticipantActivity(name)
+                                }
+                                className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
+                              >
+                                📈 Participant Activity
+                              </button>
 
-                                        <button
-                                          onClick={() => {
-                                            controlParticipant(name, "lowerHand");
-                                            setOpenParticipantMenu(null);
-                                          }}
-                                          className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-yellow-200 hover:bg-yellow-300/[0.08]"
-                                        >
-                                          ✋ Lower hand
-                                        </button>
-                                      </>
-                                    ) : null}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openParticipantPermissions(name)
+                                }
+                                className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
+                              >
+                                🔐 Permissions
+                              </button>
+                            </>
+                          ) : null}
 
-                                    {!host ? (
-                                      <button
-                                        onClick={() => {
-                                          controlParticipant(name, "promote");
-                                          setOpenParticipantMenu(null);
-                                        }}
-                                        className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-cyan-200 hover:bg-cyan-300/[0.08]"
-                                      >
-                                        🛡️ Promote to admin
-                                      </button>
-                                    ) : null}
+                          {!assistant ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openParticipantProfile(name)
+                              }
+                              className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
+                            >
+                              👤 Profile
+                            </button>
+                          ) : null}
 
-                                    <button
-                                      onClick={() => {
-                                        controlParticipant(name, "mute");
-                                        setOpenParticipantMenu(null);
-                                      }}
-                                      className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
-                                    >
-                                      🔇 Force mute
-                                    </button>
+                          {isCurrentViewer && !assistant ? (
+                            <>
+                              <div className="my-1 border-t border-white/10" />
 
-                                    {!host ? (
-                                      <button
-                                        onClick={() => {
-                                          controlParticipant(name, "removeParticipant");
-                                          setOpenParticipantMenu(null);
-                                        }}
-                                        className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-red-200 hover:bg-red-300/[0.08]"
-                                      >
-                                        ⛔ Remove participant
-                                      </button>
-                                    ) : null}
-                                  </>
-                                ) : null}
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenParticipantMenu(null);
+                                  chooseCurrentUserAvatar();
+                                }}
+                                className="w-full rounded-xl px-3 py-2 text-left text-xs font-black hover:bg-white/[0.06]"
+                              >
+                                🖼️ Change Profile Photo
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenParticipantMenu(null);
+                                  setMeetingLifecycleDialog("leave");
+                                }}
+                                className="w-full rounded-xl px-3 py-2 text-left text-xs font-black text-red-200 hover:bg-red-300/[0.08]"
+                              >
+                                🚪 Leave Meeting
+                              </button>
+                            </>
+                          ) : null}
                             </ParticipantMenu>
 
                           <ParticipantHeaderBadges
@@ -4900,246 +5553,135 @@ useEffect(() => {
             </MeetingStage>
 
           <section className="mt-5 rounded-3xl border border-white/10 bg-[#050b12]/[0.04] p-4">
-            <div className="mb-4 flex gap-2">
-              {[
-                ["voice", "🎙️ Voice"],
-                ["chat", "💬 Chat"],
-                ["participants", "👥 Participants"],
-                ["files", "📁 Files"],
-                ["ai", "✨ AI"],
-              ].map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setBottomPanel(key as any)}
-                  className={`rounded-xl border px-4 py-2 text-sm ${
-                    bottomPanel === key
-                      ? "border-cyan-300/50 bg-cyan-500/20 text-cyan-100"
-                      : "border-white/10 bg-black/20 text-slate-300"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+            <div className="mb-4">
+              <WorkspaceNavigation
+                activeWorkspace={
+                  bottomPanel
+                }
+                onWorkspaceChange={
+                  setBottomPanel
+                }
+              />
             </div>
 
-            {bottomPanel === "voice" ? (
-              <div className="grid gap-4 xl:grid-cols-3">
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="font-semibold">Voice Translation Control Center</div>
-                  <p className="mt-2 text-xs text-slate-400">
-                    Live interpretation foundation connected. Provider subscriptions will unlock smoother realtime STT/TTS.
-                  </p>
-                  <div className="mt-4 grid gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] p-3 text-sm">
-                    <div className="flex justify-between"><span className="text-slate-400">Source language</span><b>{languageLabel(sourceLanguage)}</b></div>
-                    <div className="flex justify-between"><span className="text-slate-400">Listener language</span><b>{languageLabel(listenLanguage)}</b></div>
-                    <div className="flex justify-between"><span className="text-slate-400">Transcript</span><b className="text-emerald-300">{latestTranscript ? "Running" : "Waiting"}</b></div>
-                    <div className="flex justify-between"><span className="text-slate-400">Translated caption</span><b className={latestCaption ? "text-emerald-300" : "text-slate-500"}>{latestCaption ? "Ready" : "Waiting"}</b></div>
-                    <div className="flex justify-between"><span className="text-slate-400">Target latency</span><b className="text-cyan-200">2–5s</b></div>
-                    <div className="flex justify-between"><span className="text-slate-400">Speaker profile</span><b className="text-purple-200">Enrolled foundation</b></div>
-                  </div>
-                </div>
+{bottomPanel === "voice" ? (
+  <div className="space-y-4">
+    <LiveVoiceRuntime
+      meetingCode={meetingCode}
+      sourceLanguage={sourceLanguage}
+      targetLanguage={listenLanguage}
+      onStatusChange={(status: LiveVoiceStatus) => {
+        setToolActionStatus(
+          status === "connected"
+            ? "Live voice connected"
+            : status === "idle"
+              ? "Live voice disconnected"
+              : `Live voice: ${status}`,
+        );
+      }}
+      onTranscript={(transcript: LiveVoiceTranscript) => {
+        setToolActionStatus(
+          transcript.final
+            ? "Live transcript received"
+            : "Live transcript updating",
+        );
+      }}
+      onError={(message: string) => {
+        setToolActionStatus(`Live voice error: ${message}`);
+      }}
+    />
 
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4 xl:col-span-2">
-                  <div className="font-semibold">Live Transcript</div>
-                  {latestTranscript ? (
-                    <>
-                      <p className="mt-4 text-sm">
-                        <b>{latestTranscript.speaker_name || "Speaker"}:</b> {latestTranscript.transcript_text}
-                      </p>
-                      {latestCaption ? (
-                        <p className="mt-2 text-sm text-cyan-200">{latestCaption}</p>
-                      ) : (
-                        <p className="mt-2 text-xs text-slate-500">No {languageLabel(listenLanguage)} translation yet.</p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="mt-4 text-sm text-slate-400">No transcript yet.</p>
-                  )}
-                </div>
-              </div>
-            ) : null}
-
+    <VoiceWorkspace
+      listenLanguage={listenLanguage}
+      sourceLanguage={sourceLanguage}
+      latestTranscript={latestTranscript}
+      latestCaption={latestCaption}
+      languageLabel={languageLabel}
+    />
+  </div>
+) : null}
             {bottomPanel === "chat" ? (
-              <section className="grid h-[clamp(300px,36vh,420px)] min-h-0 grid-cols-1 overflow-hidden">
-                <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-2xl border border-white/10 bg-[#050b12]/[0.04] p-4">
-                  <div className="shrink-0 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-black uppercase tracking-[0.24em] text-cyan-300">Shared chat</div>
-                      <h3 className="mt-1 text-lg font-black">Meeting Chat</h3>
-                    </div>
-                    <span className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-1 text-xs font-black text-emerald-300">
-                      Live
-                    </span>
-                  </div>
-
-                  <div className="nexus-muted-scrollbar mt-3 min-h-0 space-y-2 overflow-y-auto overscroll-contain pr-2 [scrollbar-gutter:stable]">
-                    {!meetingChatMessages.length ? (
-                      <div className="grid h-full min-h-36 place-items-center px-6 text-center">
-                        <div>
-                          <div className="text-2xl">💬</div>
-                          <div className="mt-2 text-sm font-black text-slate-200">
-                            No meeting messages yet
-                          </div>
-                          <p className="mt-1 text-xs leading-5 text-slate-500">
-                            Start the conversation. Shared messages will appear here
-                            for everyone connected to this meeting.
-                          </p>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {meetingChatMessages.map((message) => {
-                      const messageId = String(message.id);
-                      const messageExpanded =
-                        expandedChatMessageIds.has(messageId);
-                      const messageIsLong =
-                        String(message.body || "").length > 420;
-
-                      return (
-                      <article
-                        key={message.id}
-                        className="group rounded-xl border border-white/[0.08] bg-white/[0.025] px-3 py-2.5 transition hover:border-white/15 hover:bg-white/[0.04]"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-black">{message.sender}</div>
-                            <div className="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-slate-500">{message.role} · {chatLanguageLabel(message)}</div>
-                          </div>
-                          <span className="text-xs text-slate-500">{message.time}</span>
-                        </div>
-                        <p className="mt-2 text-sm leading-5 text-slate-300">{messageExpanded || !messageIsLong
-                              ? message.body
-                              : `${String(message.body || "").slice(0, 420).trim()}…`}</p>
-                          {messageIsLong ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                toggleExpandedChatMessage(messageId)
-                              }
-                              className="mt-2 text-[11px] font-black text-cyan-300 transition hover:text-cyan-100"
-                            >
-                              {messageExpanded
-                                ? "Show less"
-                                : "Show more"}
-                            </button>
-                          ) : null}
-                        <div className="mt-2 flex gap-2 text-[10px] opacity-70 transition group-hover:opacity-100">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              chatQuickAction(`${message.sender} message pinned`)
-                            }
-                            className="rounded-lg border border-white/10 px-2 py-1.5 font-black"
-                          >
-                            Pin
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              chatQuickAction(
-                                `${message.sender} message sent to notes`
-                              )
-                            }
-                            className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 px-2 py-1.5 font-black text-cyan-100"
-                          >
-                            To notes
-                          </button>
-                        </div>
-                      </article>
-                    )})}
-                  </div>
-
-                  <div className="relative z-20 mt-2 flex min-w-0 shrink-0 gap-2 border-t border-white/10 bg-[#07111c] pt-3">
-                    <input
-                      id="nexus-meeting-chat-input"
-                      value={chatDraft}
-                      onChange={(e) => setChatDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") sendMeetingChatMessage();
-                      }}
-                      placeholder="Write to meeting chat..."
-                      className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm outline-none transition focus:border-cyan-300/40"
-                    />
-                    <button
-                      type="button"
-                      onClick={sendMeetingChatMessage}
-                      disabled={!chatDraft.trim()}
-                      className="rounded-xl border border-cyan-300/30 bg-cyan-300/10 px-4 py-2.5 text-sm font-black text-cyan-100 transition hover:bg-cyan-300/15 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Send
-                    </button>
-                  </div>
-                </div>
-
-              </section>
+              <ChatWorkspace
+                meetingChatMessages={
+                  meetingChatMessages
+                }
+                chatDraft={chatDraft}
+                setChatDraft={setChatDraft}
+                expandedChatMessageIds={
+                  expandedChatMessageIds
+                }
+                sendMeetingChatMessage={
+                  sendMeetingChatMessage
+                }
+                toggleExpandedChatMessage={
+                  toggleExpandedChatMessage
+                }
+                chatQuickAction={
+                  chatQuickAction
+                }
+                chatLanguageLabel={
+                  chatLanguageLabel
+                }
+              />
             ) : null}
 
             {bottomPanel === "participants" ? (
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                <div className="font-semibold">Participants</div>
-                <p className="mt-2 text-xs text-slate-400">
-                  Participant backend state, roles, language, and speaker/listener status.
-                </p>
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {activeParticipants.length ? visibleParticipants.map((p: any, index: number) => {
-                    const name = p.name || p.display_name || p.participant_name || p.email || `Guest ${index + 1}`;
-                    return (
-                      <div key={p.id || name} className="rounded-xl border border-white/10 bg-[#050b12]/[0.04] p-3">
-                        <div className="font-semibold">{name}</div>
-                        <div className="text-xs text-slate-400">{p.role || "Participant"}</div>
-                        <div className="mt-2 text-xs text-cyan-200">
-                          Listening: {languageLabel(p.listening_language || listenLanguage)}
-                        </div>
-                      </div>
-                    );
-                  }) : (
-                    <p className="text-sm text-slate-400">{humanParticipantCount} participants connected. Open People to manage presence, language, speaking, and roles.</p>
-                  )}
-                </div>
-              </div>
+              <ParticipantsWorkspace
+                activeParticipants={
+                  activeParticipants
+                }
+                visibleParticipants={
+                  visibleParticipants
+                }
+                humanParticipantCount={
+                  humanParticipantCount
+                }
+                listenLanguage={
+                  listenLanguage
+                }
+                languageLabel={
+                  languageLabel
+                }
+              />
             ) : null}
 
             {bottomPanel === "files" ? (
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <div className="font-semibold">Shared Assets</div>
-                  <p className="mt-2 text-sm text-slate-400">
-                    Upload meeting documents, slides, spreadsheets, images, and videos into the presentation stage.
-                  </p>
+              <FilesWorkspace
+                meetingAssetKind={
+                  meetingAssetKind
+                }
+                meetingAssetName={
+                  meetingAssetName
+                }
+                handleMeetingAssetUpload={
+                  handleMeetingAssetUpload
+                }
+              />
+            ) : null}
 
-                  <div className="mt-5 grid gap-4 md:grid-cols-5">
-                    {[
-                      { kind: "presentation", label: "Presentation", icon: "📊", accept: ".ppt,.pptx" },
-                      { kind: "doc", label: "PDF / Docs", icon: "📄", accept: ".pdf,.doc,.docx" },
-                      { kind: "spreadsheet", label: "Spreadsheet", icon: "📈", accept: ".xls,.xlsx,.csv" },
-                      { kind: "image", label: "Images", icon: "🖼️", accept: "image/*" },
-                      { kind: "video", label: "Videos", icon: "🎬", accept: "video/*" },
-                    ].map((item: any) => (
-                      <label
-                        key={item.kind}
-                        className={`cursor-pointer rounded-2xl border p-5 text-center transition hover:border-cyan-300/50 hover:bg-cyan-300/10 ${
-                          meetingAssetKind === item.kind ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-100" : "border-white/10 bg-[#050b12]/[0.05]"
-                        }`}
-                      >
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept={item.accept}
-                          onChange={(event) => handleMeetingAssetUpload(item.kind, event)}
-                        />
-                        <div className="text-3xl">{item.icon}</div>
-                        <div className="mt-3 font-semibold">{item.label}</div>
-                      </label>
-                    ))}
-                  </div>
+            {bottomPanel === "notes" ? (
+              <NotesWorkspace />
+            ) : null}
 
-                  {meetingAssetName ? (
-                    <div className="mt-5 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] p-4 text-sm text-cyan-100">
-                      Active asset: {meetingAssetName}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
+            {bottomPanel === "documents" ? (
+              <DocumentsWorkspace />
+            ) : null}
+
+            {bottomPanel === "whiteboard" ? (
+              <WhiteboardWorkspace />
+            ) : null}
+
+            {bottomPanel === "tasks" ? (
+              <TasksWorkspace />
+            ) : null}
+
+            {bottomPanel === "polls" ? (
+              <PollsWorkspace />
+            ) : null}
+
+            {bottomPanel === "apps" ? (
+              <AppsWorkspace />
+            ) : null}
 
             {bottomPanel === "ai" ? (
               <div className="overflow-hidden rounded-2xl border border-cyan-300/20 bg-black/20">
@@ -5157,15 +5699,18 @@ useEffect(() => {
                       <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
                         RioMind continuously observes permitted transcript,
                         chat, translation, decisions, commitments, risks, and
-                        meeting activity. Counts currently reflect this local
-                        meeting session until database persistence and live
-                        multi-user synchronization are connected.
+                        meeting activity. This workspace is a projection of
+                        the persisted meeting-intelligence runtime.
                       </p>
                     </div>
 
                     <div className="flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-300/[0.07] px-3 py-2 text-xs font-black text-emerald-200">
                       <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-                      Demo intelligence · Local meeting state
+                      {intelligenceSyncStatus === "synced"
+                        ? "Live · Persistent intelligence"
+                        : intelligenceSyncStatus === "syncing"
+                        ? "Syncing · RioMind intelligence"
+                        : "Sync error · RioMind intelligence"}
                     </div>
                   </div>
 
@@ -7700,5 +8245,6 @@ useEffect(() => {
           </aside>
       </div>
     </main>
+  </SimpleMeetingShell>
   );
 }

@@ -1,7 +1,7 @@
 import { getRioMindPgPool } from "@/lib/riomind/db";
 import { ensureRioMindTeamsSchema } from "./schema";
 
-let ready = false;
+let schemaReady: Promise<void> | null = null;
 
 export function getRioMindTeamsPool() {
   return getRioMindPgPool();
@@ -10,10 +10,16 @@ export function getRioMindTeamsPool() {
 export async function getReadyRioMindTeamsPool() {
   const pool = getRioMindTeamsPool();
 
-  if (!ready) {
-    await ensureRioMindTeamsSchema(pool);
-    ready = true;
+  if (!schemaReady) {
+    schemaReady = ensureRioMindTeamsSchema(pool).catch(
+      (error) => {
+        schemaReady = null;
+        throw error;
+      }
+    );
   }
+
+  await schemaReady;
 
   return pool;
 }

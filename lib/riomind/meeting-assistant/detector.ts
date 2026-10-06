@@ -36,6 +36,7 @@ export type MeetingDetection = {
   sourceType: MeetingSourceType;
   sourceId: string;
   sourceText: string;
+  language?: string;
   detectedBy: "rules";
   tags: string[];
 };
@@ -172,6 +173,7 @@ function createDetection(
     sourceType: input.sourceType,
     sourceId: input.sourceId,
     sourceText: input.sourceText,
+    language: input.language,
     detectedBy: "rules",
     tags: extras?.tags || [],
   };

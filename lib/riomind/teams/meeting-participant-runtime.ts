@@ -480,6 +480,9 @@ export async function listActiveMeetingParticipants(
          'away',
          'reconnecting'
        )
+       AND last_seen_at IS NOT NULL
+       AND last_seen_at >=
+         now() - interval '2 minutes'
      ORDER BY
        joined_at ASC NULLS LAST,
        created_at ASC`,

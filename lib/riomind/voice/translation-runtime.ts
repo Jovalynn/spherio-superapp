@@ -2,6 +2,7 @@ import { ensureRioMindAiFoundationSchema, getRioMindAiFoundationPool, normalizeA
 import { selectRioMindVoiceProvider } from "./voice-provider-registry";
 import { recordRioMindVoiceEvent } from "./voice-event-bus";
 import { upsertRioMindKgEdge, upsertRioMindKgNode } from "../knowledge-graph/kg-engine";
+import { translateWithRioMindProvider } from "../translation/translation-service";
 
 export async function runRioMindVoiceTranslation(input: {
   aiLayer?: unknown;
@@ -21,11 +22,20 @@ export async function runRioMindVoiceTranslation(input: {
   const sourceLanguage = input.sourceLanguage || "auto";
   const targetLanguage = input.targetLanguage || "en";
 
-  const translation =
-    provider.id === "mock_voice"
-      ? `[mock ${sourceLanguage}->${targetLanguage}] ${input.text}`
-      : `[${sourceLanguage}->${targetLanguage}] ${input.text}`;
+const translationResult = await translateWithRioMindProvider({
+  text: input.text,
+  sourceLanguage,
+  targetLanguage,
+  provider: input.provider,
+});
 
+if (!translationResult.ok || !translationResult.translatedText) {
+  throw new Error(
+    translationResult.error || "Translation provider failed",
+  );
+}
+
+const translation = translationResult.translatedText;
   const result = await getRioMindAiFoundationPool().query(
     `INSERT INTO riomind_voice_transcripts
      (session_id, meeting_code, speaker_label, source_language, target_language, transcript, translation, confidence, metadata)
@@ -41,7 +51,7 @@ export async function runRioMindVoiceTranslation(input: {
       translation,
       provider.id === "mock_voice" ? 0.5 : null,
       JSON.stringify({
-        provider: provider.id,
+        provider: translationResult.provider,
         providerStatus: provider.status,
         mode: "translation",
         ...(input.metadata || {}),
@@ -57,7 +67,7 @@ export async function runRioMindVoiceTranslation(input: {
       meetingCode: input.meetingCode || null,
       sourceLanguage,
       targetLanguage,
-      provider: provider.id,
+      provider: translationResult.provider,
       providerStatus: provider.status,
       transcriptId: result.rows[0].id,
     },
