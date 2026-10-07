@@ -1,9 +1,20 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 
 type TradeSide = "buy" | "sell";
+
+type PumpPreviewResult = {
+  execution?: {
+    status?: string;
+    side?: TradeSide;
+    amountIn?: number;
+    amountInDenom?: string;
+    amountOut?: number;
+    amountOutDenom?: string;
+    progressPercent?: number;
+  };
+};
 
 type PumpTradePanelProps = {
   tokenAddress: string;
@@ -23,13 +34,12 @@ export default function PumpTradePanel({
   tokenAddress,
   symbol,
 }: PumpTradePanelProps) {
-  const router = useRouter();
   const [side, setSide] = useState<TradeSide>("buy");
   const [amount, setAmount] = useState("0.5");
   const [traderAddress, setTraderAddress] = useState(
     "rio1testbuyer000000000000000000000000000000000",
   );
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<PumpPreviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -63,8 +73,8 @@ export default function PumpTradePanel({
             amount: n,
             tokenAddress,
             traderAddress,
-            executionMode: "backend-test",
-            previewOnly: false,
+            executionMode: "preview-only",
+            previewOnly: true,
             slippageBps: 100,
             maxPriceImpactBps: 2500,
           }),
@@ -77,7 +87,6 @@ export default function PumpTradePanel({
         }
 
         setResult(json);
-        router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Pump trade failed.");
       }
@@ -92,7 +101,7 @@ export default function PumpTradePanel({
             Pump Trade
           </div>
           <div className="mt-1 text-xs leading-5 text-white/45">
-            Backend-test execution through the authoritative curve engine.
+            Review a curve estimate without sending a transaction.
           </div>
         </div>
 
@@ -106,10 +115,10 @@ export default function PumpTradePanel({
           Execution Mode
         </div>
         <div className="mt-1 text-sm font-semibold text-amber-100">
-          Backend-test mode active
+          Preview-only mode
         </div>
         <p className="mt-1 text-xs leading-5 text-amber-100/65">
-          Trades are executed through the local authoritative curve engine and indexed into pump_live_trades. Wallet-signed RioLight execution is pending.
+          This screen cannot submit or verify an on-chain trade. Preview results do not change balances, reserves, or trade history.
         </p>
       </div>
 
@@ -193,7 +202,7 @@ export default function PumpTradePanel({
             {result.execution.status?.toUpperCase()} · {result.execution.side}
           </div>
           <div className="mt-1 text-emerald-100/75">
-            Tx: {result.execution.txHash}
+            No chain transaction was submitted.
           </div>
           <div className="mt-1 text-emerald-100/75">
             In: {formatNumber(result.execution.amountIn)}{" "}
