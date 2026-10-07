@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { SigningCosmWasmClient } from "@cosmjs/cosmwasm-stargate";
 import { DirectSecp256k1HdWallet } from "@cosmjs/proto-signing";
 import { GasPrice } from "@cosmjs/stargate";
+import { isAuthorizedPumpFinalizer } from "@/lib/pump/finalizer-auth.mjs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -323,6 +324,13 @@ async function executeFinalizerStepWithFallback(params: {
   }
 }
 export async function POST(request: NextRequest) {
+  if (!isAuthorizedPumpFinalizer(request)) {
+    return NextResponse.json(
+      { ok: false, error: "Unauthorized PUMP finalizer request." },
+      { status: 401 },
+    );
+  }
+
   try {
     const body = await request.json().catch(() => ({}));
     const tokenAddress = String(body?.tokenAddress || body?.token || "").trim();
@@ -378,8 +386,6 @@ export async function POST(request: NextRequest) {
       ok: true,
       source: "pump_graduation_finalizer_execute",
       tokenAddress,
-      signer: address,
-      rpcUrl: RPC_URL,
       requiredSeedUrio,
       availableUrioBeforeExecution: availableUrio,
       pairAddress: plan.executionPlan?.pairAddress,

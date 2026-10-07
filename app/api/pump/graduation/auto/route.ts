@@ -3,6 +3,7 @@ import { Pool } from "pg";
 import { SigningCosmWasmClient } from "@cosmjs/cosmwasm-stargate";
 import { DirectSecp256k1HdWallet } from "@cosmjs/proto-signing";
 import { GasPrice } from "@cosmjs/stargate";
+import { isAuthorizedPumpFinalizer } from "@/lib/pump/finalizer-auth.mjs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -110,17 +111,6 @@ function parseLimit(value: unknown, fallback = 10, max = 50) {
   const n = Math.floor(Number(value));
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.min(n, max);
-}
-
-function checkAdmin(request: NextRequest) {
-  if (!ADMIN_TOKEN) return true;
-
-  const supplied =
-    request.headers.get("x-pump-finalizer-token") ||
-    request.nextUrl.searchParams.get("token") ||
-    "";
-
-  return supplied === ADMIN_TOKEN;
 }
 
 function assertBaseUnitAmount(value: unknown, label: string) {
@@ -731,7 +721,7 @@ async function resolveTxHeight(txHash: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    if (!checkAdmin(request)) {
+    if (!isAuthorizedPumpFinalizer(request, ADMIN_TOKEN)) {
       return NextResponse.json(
         {
           ok: false,
