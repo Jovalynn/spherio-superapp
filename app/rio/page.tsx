@@ -2,91 +2,20 @@
 
 import type { ReactNode } from "react";
 import { apiUrl } from "@/lib/apiBase";
+import {
+  RIO_APPROVED_ALLOCATIONS,
+  RIO_APPROVED_NOMINAL_TOTAL,
+} from "@/lib/rioAllocationPolicy.mjs";
 
 type RioState = {
-  height?: string;
-  total_supply?: string;
-  circulating?: string;
-  bonded?: string;
-  treasury?: string;
-  protocol_reserves?: string;
-  dead_locked?: string;
-};
-
-type ValidatorPolicyResponse = {
-  count: number;
-  live_height?: number;
-  compliance_summary?: {
-    compliant_count: number;
-    pending_normalization_count: number;
-    live_bonded_total_rio: string;
-    target_allocation_total_rio: string;
-    coverage_ratio: string;
-    coverage_percent: string;
-  };
-  validators?: Array<{
-    validator_label: string;
-    wallet_address?: string | null;
-    operator_address?: string | null;
-    target_allocation_rio?: string;
-    funding_source?: string | null;
-    current_vesting_status?: string | null;
-    policy_status?: string | null;
-    live_bonded_amount_rio?: string | null;
-  }>;
-};
-
-type ClassifiedAccount = {
-  address: string;
-  label: string;
-  category: string;
-  subcategory?: string | null;
-  is_protocol_owned: boolean;
-  is_circulating: boolean;
-  is_permanently_locked: boolean;
-  is_validator_related: boolean;
-  notes?: string | null;
-  target_notes?: string | null;
-  funding_source?: string | null;
-  current_vesting_status?: string | null;
-  policy_status?: string | null;
-  height?: number | null;
-  time?: string | null;
-  target_balance_urio: string;
-  live_wallet_balance_urio: string;
-  live_bonded_urio: string;
-  effective_live_balance_urio: string;
-  spendable_balance_urio: string;
-  vested_balance_urio: string;
-  vesting_balance_urio: string;
-  delegated_balance_urio: string;
-  unbonding_balance_urio: string;
-  rewards_balance_urio: string;
-  delta_urio: string;
-  truth_state: string;
-};
-
-type ClassifiedCategorySummary = {
-  category: string;
-  count: number;
-  target_balance_urio: string;
-  live_wallet_balance_urio: string;
-  live_bonded_urio: string;
-  effective_live_balance_urio: string;
-  vested_balance_urio: string;
-  vesting_balance_urio: string;
-  delegated_balance_urio: string;
-};
-
-type ClassifiedAccountsResponse = {
-  overview_summary: {
-    count: number;
-    target_visible_count: number;
-    live_wallet_visible_count: number;
-    staking_visible_count: number;
-  };
-  accounts: ClassifiedAccount[];
-  category_summary: ClassifiedCategorySummary[];
+  height?: string | number;
+  total_supply?: string | number;
+  circulating?: string | number;
+  bonded?: string | number;
+  protocol_reserves?: string | number;
+  authoritative_monetary_truth?: boolean;
+  authority?: string;
+  source?: string;
 };
 
 const RIO_LOGO =
@@ -96,31 +25,9 @@ async function getRioState(): Promise<RioState | null> {
   try {
     const res = await fetch(apiUrl("/api/rio/state"), { cache: "no-store" });
     if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
-  }
-}
 
-async function getValidatorPolicy(): Promise<ValidatorPolicyResponse | null> {
-  try {
-    const res = await fetch(apiUrl("/api/rio/validators/policy"), {
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
-  }
-}
-
-async function getClassifiedAccounts(): Promise<ClassifiedAccountsResponse | null> {
-  try {
-    const res = await fetch(apiUrl("/api/rio/accounts/classified"), {
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    return res.json();
+    const state = (await res.json()) as RioState;
+    return state.authoritative_monetary_truth === true ? state : null;
   } catch {
     return null;
   }
@@ -133,150 +40,47 @@ function fmt(v?: string | number | null) {
   return new Intl.NumberFormat("en-US").format(n);
 }
 
-function urioToRioString(v?: string | null) {
-  if (!v) return "—";
-  const n = Number(v) / 1_000_000;
-  if (Number.isNaN(n)) return "—";
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 2,
-  }).format(n);
-}
-
-function prettyCategory(category?: string) {
-  switch (category) {
-    case "treasury":
-      return "Treasury";
-    case "forever_lock":
-      return "Forever Lock";
-    case "core_contributor":
-      return "Core Contributor";
-    case "validator_wallet":
-      return "Validator Wallets";
-    case "ecosystem_reserve":
-      return "Ecosystem Reserve";
-    case "protocol_reserve":
-      return "Protocol Reserve";
-    case "module_account":
-      return "Module Accounts";
-    case "public_circulating":
-      return "Public Circulating";
-    default:
-      return category ? category.replace(/_/g, " ") : "Unknown";
-  }
-}
-
-function truthStateLabel(state?: string) {
-  switch (state) {
-    case "target_and_live_visible":
-      return "Target + Live Visible";
-    case "staking_visible":
-      return "Staking Visible";
-    case "policy_allocated_not_live":
-      return "Policy Allocated / Not Live";
-    case "target_not_live_visible":
-      return "Target / Not Live Visible";
-    case "live_noncanonical":
-      return "Live / Noncanonical";
-    case "live_zero":
-      return "Live Zero";
-    default:
-      return "Canonical Only";
-  }
-}
-
-function truthStateStyle(state?: string) {
-  switch (state) {
-    case "target_and_live_visible":
-      return "border-emerald-500/25 bg-emerald-500/10 text-emerald-200";
-    case "staking_visible":
-      return "border-sky-500/25 bg-sky-500/10 text-sky-200";
-    case "policy_allocated_not_live":
-      return "border-amber-500/25 bg-amber-500/10 text-amber-200";
-    case "target_not_live_visible":
-      return "border-orange-400/25 bg-orange-400/10 text-orange-200";
-    case "live_noncanonical":
-      return "border-fuchsia-500/25 bg-fuchsia-500/10 text-fuchsia-200";
-    case "live_zero":
-      return "border-white/10 bg-white/5 text-white/70";
-    default:
-      return "border-white/10 bg-white/5 text-white/70";
-  }
-}
-
 const accentLabel = "text-[11px] uppercase tracking-[0.24em] text-[#f0c58a]";
 
 export default async function RioPage() {
-  const [state, policy, classified] = await Promise.all([
-    getRioState(),
-    getValidatorPolicy(),
-    getClassifiedAccounts(),
-  ]);
-
-  const summary = policy?.compliance_summary;
-  const overview = classified?.overview_summary;
-
-  const rioStateAvailable = Boolean(state);
-  const policyAvailable = Boolean(policy);
-  const classifiedAvailable = Boolean(classified);
+  const state = await getRioState();
+  const rioStateAvailable = state !== null;
 
   return (
-    <div className="relative space-y-12 overflow-hidden">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[460px]">
-        <div className="absolute left-[-8%] top-[-8%] h-[260px] w-[260px] rounded-full bg-[rgba(40,90,170,0.14)] blur-3xl" />
-        <div className="absolute right-[10%] top-[0%] h-[240px] w-[240px] rounded-full bg-[rgba(242,133,0,0.10)] blur-3xl" />
-        <div className="absolute left-[30%] top-[16%] h-[180px] w-[180px] rounded-full bg-[rgba(244,162,97,0.08)] blur-3xl" />
-      </div>
-
-      <section className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#0d1015] p-12 shadow-[0_30px_120px_rgba(0,0,0,0.45)]">
+    <div className="relative space-y-8 overflow-hidden">
+      <section className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#0d1015] p-8 shadow-[0_30px_120px_rgba(0,0,0,0.45)] md:p-12">
         <div
-          className="absolute right-6 top-6 h-52 w-52 bg-contain bg-center bg-no-repeat opacity-[0.08]"
+          className="pointer-events-none absolute right-6 top-6 h-52 w-52 bg-contain bg-center bg-no-repeat opacity-[0.08]"
           style={{ backgroundImage: `url('${RIO_LOGO}')` }}
         />
 
-        <div className="grid gap-10 lg:grid-cols-[1.2fr_0.9fr]">
+        <div className="relative grid gap-10 lg:grid-cols-[1.2fr_0.8fr]">
           <div>
             <div className="flex items-start gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] shadow-[0_0_24px_rgba(242,133,0,0.14)]">
-                <img
-                  src={RIO_LOGO}
-                  alt="RIO Logo"
-                  width={40}
-                  height={40}
-                  className="h-10 w-10 object-contain"
-                />
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
+                <img src={RIO_LOGO} alt="RIO logo" width={40} height={40} className="h-10 w-10 object-contain" />
               </div>
-
               <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-[0.28em] text-[#f0c58a]">
-                  RIO Terminal
-                </div>
-
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <h1 className="text-3xl font-semibold tracking-tight text-white md:text-4xl">
-                    Real-World Interconnected Onchain
-                  </h1>
-
-                  <span className="inline-flex items-center rounded-full border border-[#f4a261]/25 bg-[rgba(242,133,0,0.10)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#fff0e2]">
-                    RIO
-                  </span>
-                </div>
-
+                <div className={accentLabel}>RIO monetary terminal</div>
+                <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white md:text-4xl">
+                  RIO policy and ledger status
+                </h1>
                 <p className="mt-3 max-w-3xl text-sm leading-7 text-white/72">
-                  RIO is the sovereign monetary asset powering the Spherio ecosystem.
-                  This terminal presents supply, security, policy, and institutional
-                  account telemetry in one premium monetary surface.
+                  Approved allocation targets are shown separately from observed chain state.
+                  The terminal displays current monetary figures only when their source
+                  explicitly identifies canonical monetary truth.
                 </p>
               </div>
             </div>
 
             {!rioStateAvailable ? (
-              <div className="mt-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-                RIO state endpoint is currently unavailable. The terminal remains online and
-                will render available policy and classified-account truth where possible.
+              <div className="mt-6 rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100" role="status">
+                Live RIO monetary state is unavailable from a verified chain-derived source.
+                Current supply, circulation, bonded amount, and protocol custody are withheld.
               </div>
             ) : null}
 
-            <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <Metric label="Total Supply" value={fmt(state?.total_supply)} />
               <Metric label="Circulating" value={fmt(state?.circulating)} />
               <Metric label="Bonded Security" value={fmt(state?.bonded)} />
@@ -284,302 +88,64 @@ export default async function RioPage() {
             </div>
           </div>
 
-          <div
-            className="rounded-[24px] border p-6 shadow-[0_0_24px_rgba(242,133,0,0.08)]"
-            style={{
-              borderColor: "rgba(244,162,97,0.22)",
-              background:
-                "linear-gradient(180deg, rgba(20,33,53,0.96), rgba(18,24,37,0.96))",
-            }}
-          >
-            <div className={accentLabel}>What this terminal shows</div>
-            <h2 className="mt-3 text-2xl text-white">
-              Target vs Live Allocation Truth
-            </h2>
+          <div className="rounded-[24px] border border-[#f4a261]/20 bg-[linear-gradient(180deg,rgba(20,33,53,0.96),rgba(18,24,37,0.96))] p-6">
+            <div className={accentLabel}>Authority boundary</div>
+            <h2 className="mt-3 text-2xl text-white">Targets are not balances</h2>
             <p className="mt-3 text-sm leading-7 text-white/78">
-              This page now distinguishes canonical allocation targets, wallet-visible
-              balances, staking-visible balances, and effective live amounts. It is
-              designed to show the true position of the chain rather than only the
-              subset visible as liquid wallet balances.
+              The allocation model is policy evidence. It does not establish account
+              ownership, custody, vesting, spendability, staking, or current supply.
             </p>
-
-            <div className="mt-6 grid gap-3">
-              <Pill>Canonical target balances</Pill>
-              <Pill>Wallet-visible live balances</Pill>
-              <Pill>Staking-visible validator allocations</Pill>
-              <Pill>Truth-state interpretation per account</Pill>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Pill>Approved policy target</Pill>
+              <Pill>Live observation unavailable</Pill>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,19,24,0.96),rgba(10,14,20,0.98))] p-9 shadow-[0_20px_60px_rgba(0,0,0,0.22)]">
-        <div className={accentLabel}>Classified Accounts Summary</div>
-        <p className="mt-3 max-w-3xl text-sm leading-7 text-white/72">
-          This policy layer reflects the intended RIO tokenomics structure where some
-          allocations are defined institutionally rather than exposed cleanly as wallet
-          balances. The indexed account truth table remains below.
-        </p>
-
-        <div className="mt-6 grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-          <Metric label="Classified Accounts" value={fmt(overview?.count)} />
-          <Metric label="Target Visible" value={fmt(overview?.target_visible_count)} />
-          <Metric label="Wallet Visible" value={fmt(overview?.live_wallet_visible_count)} />
-          <Metric label="Staking Visible" value={fmt(overview?.staking_visible_count)} />
-          <Metric label="Bonded Total" value={summary ? `${summary.live_bonded_total_rio} RIO` : "—"} />
-          <Metric label="Coverage" value={summary ? `${summary.coverage_percent}%` : "—"} />
-        </div>
-
-        {!classifiedAvailable ? (
-          <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/70">
-            Classified account truth is not currently available from the backend.
+      <section className="rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,19,24,0.96),rgba(10,14,20,0.98))] p-8 md:p-9">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className={accentLabel}>Approved RIO allocation model</div>
+            <h2 className="mt-2 text-2xl text-white">Nominal policy targets</h2>
           </div>
-        ) : null}
-      </section>
-
-      <section className="rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,19,24,0.96),rgba(10,14,20,0.98))] p-9 shadow-[0_20px_60px_rgba(0,0,0,0.22)]">
-        <div className={accentLabel}>Indexed Allocation Layers</div>
-        <h2 className="mt-2 text-2xl text-white">Category-Level Truth</h2>
-        <p className="mt-3 max-w-3xl text-sm leading-7 text-white/72">
-          Each category now shows target allocation, effective live balance, and
-          delta. This is more truthful than the earlier placeholder cards.
-        </p>
-
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <TokenomicsCard
-            title="Protocol Reserve"
-            target="51,000,000 RIO"
-            live="36,997,819 RIO"
-            delta="-14,002,181 RIO"
-            note="Treasury-funded validator expansion reduced reserve composition. Current live reserve truth now feeds from the authority layer."
-          />
-
-          <TokenomicsCard
-            title="Forever Lock"
-            target={`${fmt(state?.dead_locked)} RIO`}
-            live="0 RIO spendable"
-            delta="Non-spendable"
-            note="Permanent protocol dead lock. Economically present, but not live for spending."
-          />
-
-          <TokenomicsCard
-            title="Core Contributor"
-            target="2,000,000 RIO"
-            live="0 RIO"
-            delta="-2,000,000 RIO"
-            note="Core contributor allocation. Not staked and not part of protocol reserves."
-          />
-
-          <TokenomicsCard
-            title="Validator Allocations"
-            target="86,000,000 RIO"
-            live="14,000,000 RIO bonded"
-            delta="Policy / staking visible"
-            note="Validator allocations are expected to be staked by design, so wallet balances do not tell the full truth."
-          />
-
-          <TokenomicsCard
-            title="Deployment"
-            target="1,000 RIO"
-            live="1,000 RIO"
-            delta="0 RIO"
-            note="Operational deployment allocation used for infrastructure and development stack actions."
-          />
-        </div>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[1.06fr_0.94fr]">
-        <div className="rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,19,24,0.96),rgba(10,14,20,0.98))] p-9 shadow-[0_20px_60px_rgba(0,0,0,0.22)]">
-          <div className={accentLabel}>Account Truth Table</div>
-          <h2 className="mt-2 text-2xl text-white">Canonical vs Live vs Staking</h2>
-
-          <div className="mt-6 space-y-3">
-            {(classified?.accounts ?? []).length > 0 ? (
-              (classified?.accounts ?? []).map((acc) => (
-                <div
-                  key={acc.address}
-                  className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-white">{acc.label}</div>
-                      <div className="mt-1 text-xs text-white/45">
-                        {prettyCategory(acc.category)}
-                      </div>
-                      <div className="mt-1 break-all text-[11px] font-mono text-white/35">
-                        {acc.address}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <span
-                        className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] ${truthStateStyle(
-                          acc.truth_state,
-                        )}`}
-                      >
-                        {truthStateLabel(acc.truth_state)}
-                      </span>
-
-                      {acc.subcategory ? (
-                        <span
-                          className="inline-flex rounded-full border px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] text-[#fff0e2]"
-                          style={{
-                            borderColor: "rgba(244,162,97,0.22)",
-                            background: "rgba(242,133,0,0.10)",
-                          }}
-                        >
-                          {acc.subcategory}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <TerminalField
-                      label="Target"
-                      value={`${urioToRioString(acc.target_balance_urio)} RIO`}
-                    />
-                    <TerminalField
-                      label="Live Wallet"
-                      value={`${urioToRioString(acc.live_wallet_balance_urio)} RIO`}
-                    />
-                    <TerminalField
-                      label="Live Bonded"
-                      value={`${urioToRioString(acc.live_bonded_urio)} RIO`}
-                    />
-                    <TerminalField
-                      label="Effective Live"
-                      value={`${urioToRioString(acc.effective_live_balance_urio)} RIO`}
-                    />
-                    <TerminalField
-                      label="Delta"
-                      value={`${urioToRioString(acc.delta_urio)} RIO`}
-                    />
-                    <TerminalField
-                      label="Vesting"
-                      value={`${urioToRioString(acc.vesting_balance_urio)} RIO`}
-                    />
-                    <TerminalField
-                      label="Vested"
-                      value={`${urioToRioString(acc.vested_balance_urio)} RIO`}
-                    />
-                    <TerminalField
-                      label="Delegated"
-                      value={`${urioToRioString(acc.delegated_balance_urio)} RIO`}
-                    />
-                  </div>
-
-                  {acc.target_notes || acc.notes || acc.current_vesting_status || acc.policy_status ? (
-                    <div className="mt-4 rounded-xl border border-white/10 bg-black/10 p-3 text-sm text-white/70">
-                      {acc.target_notes ? <div>{acc.target_notes}</div> : null}
-                      {acc.notes ? <div className="mt-1">{acc.notes}</div> : null}
-                      {acc.current_vesting_status ? (
-                        <div className="mt-1">
-                          Vesting status:{" "}
-                          <span className="text-white/90">{acc.current_vesting_status}</span>
-                        </div>
-                      ) : null}
-                      {acc.policy_status ? (
-                        <div className="mt-1">
-                          Policy status: <span className="text-white/90">{acc.policy_status}</span>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              ))
-            ) : (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/70">
-                No classified account rows are currently available.
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div
-          className="rounded-[30px] border p-9 shadow-[0_20px_60px_rgba(0,0,0,0.22)]"
-          style={{
-            borderColor: "rgba(244,162,97,0.22)",
-            background:
-              "linear-gradient(180deg, rgba(20,33,53,0.96), rgba(18,24,37,0.96))",
-          }}
-        >
-          <div className={accentLabel}>Validator Policy Monitor</div>
-          <h2 className="mt-2 text-2xl text-white">Expanded 12-Validator Normalization</h2>
-
-          {!policyAvailable ? (
-            <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/70">
-              Validator policy data is not currently available from the backend.
+          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] px-4 py-3 text-right">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-emerald-100/65">Nominal total</div>
+            <div className="mt-1 text-xl font-semibold tabular-nums text-emerald-50">
+              {formatRioAmount(RIO_APPROVED_NOMINAL_TOTAL)} RIO
             </div>
-          ) : null}
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <ComplianceCard
-              label="Compliant"
-              value={summary ? String(summary.compliant_count) : "—"}
-            />
-            <ComplianceCard
-              label="Pending Normalization"
-              value={summary ? String(summary.pending_normalization_count) : "—"}
-            />
-            <ComplianceCard
-              label="Live Bonded Total"
-              value={summary ? `${summary.live_bonded_total_rio} RIO` : "—"}
-            />
-            <ComplianceCard
-              label="Coverage"
-              value={summary ? `${summary.coverage_percent}%` : "—"}
-            />
           </div>
+        </div>
 
-          <div className="mt-6 space-y-3">
-            {Array.from({ length: 12 }).map((_, idx) => {
-              const validator = policy?.validators?.find(
-                (v) => v.validator_label === `Val${idx + 1}`,
-              );
+        <p className="mt-4 max-w-4xl text-sm leading-7 text-white/65">
+          These figures represent the approved allocation model and are not current
+          account balances or release authority. The former 161M Forever Lock category
+          is abolished; historical ecosystem custody is classified under Ecosystem
+          Protocol, with the former 1M excess tracked separately.
+        </p>
 
-              return (
-                <div
-                  key={idx}
-                  className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-white">
-                        Validator {idx + 1}
-                      </div>
-                      <div className="mt-1 text-xs text-white/45">
-                        {validator?.funding_source ?? "—"}
-                      </div>
-                    </div>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {RIO_APPROVED_ALLOCATIONS.map((allocation) => (
+            <PolicyAllocationCard
+              key={allocation.key}
+              label={allocation.label}
+              amount={allocation.amount}
+            />
+          ))}
+        </div>
+      </section>
 
-                    <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-white/80">
-                      {validator?.policy_status ?? "unknown"}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <TerminalField
-                      label="Target Allocation"
-                      value={
-                        validator?.target_allocation_rio
-                          ? `${validator.target_allocation_rio} RIO`
-                          : "—"
-                      }
-                    />
-                    <TerminalField
-                      label="Live Bonded"
-                      value={
-                        validator?.live_bonded_amount_rio
-                          ? `${validator.live_bonded_amount_rio} RIO`
-                          : "—"
-                      }
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+      <section className="rounded-[30px] border border-amber-400/20 bg-amber-400/[0.045] p-8 md:p-9">
+        <div className={accentLabel}>Live reconciliation</div>
+        <h2 className="mt-2 text-2xl text-white">Account and validator state</h2>
+        <p className="mt-3 max-w-4xl text-sm leading-7 text-white/70">
+          Current account custody, vesting and spendability, validator registration,
+          bonded and jailed state, and governance weight are not verified by the
+          available monetary endpoint. This terminal therefore makes no live position
+          or validator eligibility claim.
+        </p>
+        <div className="mt-5 inline-flex rounded-full border border-amber-300/20 bg-amber-300/[0.07] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-amber-100">
+          Reconciliation unavailable
         </div>
       </section>
     </div>
@@ -588,61 +154,27 @@ export default async function RioPage() {
 
 function Metric({ label, value }: { label: string; value?: string }) {
   return (
-    <div className="rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5 shadow-[0_14px_36px_rgba(0,0,0,0.20)]">
-      <div className="text-xs uppercase tracking-[0.2em] text-[#f0c58a]">
-        {label}
-      </div>
-      <div className="mt-2 break-words text-xl leading-tight text-white">
-        {value ?? "—"}
+    <div className="rounded-[22px] border border-white/10 bg-white/[0.025] p-5">
+      <div className="text-xs uppercase tracking-[0.2em] text-[#f0c58a]">{label}</div>
+      <div className="mt-2 break-words text-xl leading-tight text-white">{value ?? "—"}</div>
+    </div>
+  );
+}
+
+function PolicyAllocationCard({ label, amount }: { label: string; amount: number }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-white/50">Approved target</div>
+      <h3 className="mt-3 min-h-12 text-base font-semibold text-white">{label}</h3>
+      <div className="mt-4 text-2xl font-semibold tabular-nums text-[#ffe2bd]">
+        {formatRioAmount(amount)} RIO
       </div>
     </div>
   );
 }
 
-function TokenomicsCard({
-  title,
-  target,
-  live,
-  delta,
-  note,
-}: {
-  title: string;
-  target: string;
-  live: string;
-  delta: string;
-  note: string;
-}) {
-  return (
-    <div
-      className="rounded-2xl border p-5 shadow-[0_0_18px_rgba(242,133,0,0.05)]"
-      style={{
-        borderColor: "rgba(244,162,97,0.20)",
-        background:
-          "linear-gradient(180deg, rgba(49,30,13,0.90), rgba(28,19,12,0.90))",
-      }}
-    >
-      <div className="text-[11px] uppercase tracking-[0.18em] text-[#f0c58a]">
-        {title}
-      </div>
-
-      <div className="mt-4 space-y-2">
-        <Row label="Target" value={target} />
-        <Row label="Live" value={live} />
-        <Row label="Delta" value={delta} />
-      </div>
-
-      <p className="mt-4 text-sm leading-6 text-white/62">{note}</p>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 text-sm">
-      <span className="text-white/50">{label}</span>
-      <span className="font-medium text-white">{value}</span>
-    </div>
-  );
+function formatRioAmount(amount: number) {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(amount);
 }
 
 function Pill({ children }: { children: ReactNode }) {
@@ -656,35 +188,6 @@ function Pill({ children }: { children: ReactNode }) {
       }}
     >
       {children}
-    </div>
-  );
-}
-
-function ComplianceCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div
-      className="rounded-2xl border p-4 shadow-[0_0_18px_rgba(242,133,0,0.06)]"
-      style={{
-        borderColor: "rgba(244,162,97,0.22)",
-        background:
-          "linear-gradient(180deg, rgba(49,30,13,0.90), rgba(28,19,12,0.90))",
-      }}
-    >
-      <div className="text-[11px] uppercase tracking-[0.18em] text-[#f0c58a]">
-        {label}
-      </div>
-      <div className="mt-2 text-xl text-white">{value}</div>
-    </div>
-  );
-}
-
-function TerminalField({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-black/10 p-3">
-      <div className="text-[11px] uppercase tracking-[0.16em] text-[#f0c58a]">
-        {label}
-      </div>
-      <div className="mt-1 break-words text-sm text-white/85">{value}</div>
     </div>
   );
 }
