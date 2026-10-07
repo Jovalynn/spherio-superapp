@@ -1,49 +1,24 @@
-import { SPHERIO_TREASURY_MULTISIG } from "@/lib/protocol/treasury";
 import { NextResponse } from "next/server";
 
-type RusdStateResponse = {
-  asset: "RUSD";
-  unit: string;
-  contract_address: string;
-  treasury_multisig: string;
-  issued_supply: {
-    raw: string;
-    formatted: string;
-  };
-  supply_ceiling: {
-    raw: string;
-    formatted: string;
-  };
-  remaining_issuance_capacity: {
-    raw: string;
-    formatted: string;
-  };
-  backing_value: {
-    raw: string;
-    formatted: string;
-  };
-  collateralization_ratio: {
-    bps: number;
-    percent: string;
-  };
-  mint_policy: {
-    daily_mint_cap: {
-      raw: string;
-      formatted: string;
-    };
-    epoch_mint_cap: {
-      raw: string;
-      formatted: string;
-    };
-    epoch_window_hours: number;
-  };
-  source: {
-    mode: string;
-    issued_supply: string;
-    policy_fields: string;
-    derived_fields: string;
-  };
-  updated_at: string;
+type CanonicalAttestation = {
+  available?: boolean;
+  authority?: string;
+  authoritative_monetary_truth?: boolean;
+  contract_address?: string | null;
+  supply_snapshot_id?: string | null;
+  height?: string | null;
+  time?: string | null;
+  total_supply_leri?: string | null;
+  reserve_truth?: {
+    available?: boolean;
+    id?: string | null;
+    supply_snapshot_id?: string | null;
+    eligible_reserve_value?: string | null;
+    collateral_ratio?: string | null;
+    target_ratio?: string | null;
+    reserve_status?: string | null;
+    created_at?: string | null;
+  } | null;
 };
 
 function getIndexerBaseUrl() {
@@ -54,153 +29,109 @@ function getIndexerBaseUrl() {
   );
 }
 
-function formatWhole(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 0,
-  }).format(value);
+function unavailable(status = 503) {
+  return NextResponse.json(
+    {
+      available: false,
+      authority: "unavailable",
+      authoritative_monetary_truth: false,
+      source: "canonical_indexer_rusd_attestation",
+      error: "canonical_rusd_attestation_unavailable",
+    },
+    { status },
+  );
 }
 
-function buildFallbackRusdState(): RusdStateResponse {
-  const issuedSupply = 6_000_000;
-  const supplyCeiling = 20_000_000;
-  const backingValue = 7_200_000;
-  const remaining = Math.max(supplyCeiling - issuedSupply, 0);
-  const ratio = issuedSupply > 0 ? (backingValue / issuedSupply) * 100 : 0;
+function isExactInteger(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9]+$/.test(value);
+}
 
-  return {
-    asset: "RUSD",
-    unit: "leri",
-    contract_address: "pending_live_contract_sync",
-    treasury_multisig: SPHERIO_TREASURY_MULTISIG,
-    issued_supply: {
-      raw: String(issuedSupply),
-      formatted: formatWhole(issuedSupply),
-    },
-    supply_ceiling: {
-      raw: String(supplyCeiling),
-      formatted: formatWhole(supplyCeiling),
-    },
-    remaining_issuance_capacity: {
-      raw: String(remaining),
-      formatted: formatWhole(remaining),
-    },
-    backing_value: {
-      raw: String(backingValue),
-      formatted: formatWhole(backingValue),
-    },
-    collateralization_ratio: {
-      bps: Math.round(ratio * 100),
-      percent: `${ratio.toFixed(2)}%`,
-    },
-    mint_policy: {
-      daily_mint_cap: {
-        raw: "100000",
-        formatted: formatWhole(100000),
-      },
-      epoch_mint_cap: {
-        raw: "500000",
-        formatted: formatWhole(500000),
-      },
-      epoch_window_hours: 24,
-    },
-    source: {
-      mode: "fallback_attestation_mode",
-      issued_supply: "degraded",
-      policy_fields: "degraded",
-      derived_fields: "fallback",
-    },
-    updated_at: new Date().toISOString(),
-  };
+function formatLeri(value: string): string {
+  const amount = BigInt(value);
+  const whole = amount / 1_000_000n;
+  const fraction = (amount % 1_000_000n).toString().padStart(6, "0");
+  return `${whole.toString()}.${fraction}`;
 }
 
 export async function GET() {
   try {
-    const response = await fetch(`${getIndexerBaseUrl()}/api/rusd/state`, {
-      method: "GET",
-      cache: "no-store",
-      headers: {
-        Accept: "application/json",
+    const response = await fetch(
+      `${getIndexerBaseUrl()}/api/rusd/attestation`,
+      {
+        method: "GET",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
       },
-    });
+    );
 
-    const text = await response.text();
+    if (!response.ok) return unavailable(503);
 
-    if (response.ok) {
-      const data = text ? JSON.parse(text) : null;
-      if (data) {
-        return NextResponse.json(data);
-      }
+    const attestation = (await response.json()) as CanonicalAttestation;
+    if (
+      attestation.available !== true ||
+      attestation.authoritative_monetary_truth !== true ||
+      typeof attestation.supply_snapshot_id !== "string" ||
+      !attestation.supply_snapshot_id.trim() ||
+      typeof attestation.contract_address !== "string" ||
+      !attestation.contract_address.trim() ||
+      !isExactInteger(attestation.total_supply_leri)
+    ) {
+      return unavailable(503);
     }
 
-    const attestationResponse = await fetch(`${getIndexerBaseUrl()}/api/rusd/attestation`, {
-      method: "GET",
-      cache: "no-store",
-      headers: {
-        Accept: "application/json",
+    const reserve = attestation.reserve_truth;
+    const reserveAvailable =
+      reserve?.available === true &&
+      reserve.supply_snapshot_id === attestation.supply_snapshot_id;
+    const ratio = reserveAvailable ? reserve?.collateral_ratio ?? null : null;
+    const ratioNumber = ratio !== null ? Number(ratio) : Number.NaN;
+    const ratioPercent = Number.isFinite(ratioNumber)
+      ? `${(ratioNumber * 100).toFixed(2)}%`
+      : null;
+    const eligibleReserve = reserveAvailable
+      ? reserve?.eligible_reserve_value ?? null
+      : null;
+
+    return NextResponse.json({
+      available: true,
+      authority: "canonical_monetary_truth",
+      authoritative_monetary_truth: true,
+      asset: "RUSD",
+      unit: "leri",
+      contract_address: attestation.contract_address,
+      supply_snapshot_id: attestation.supply_snapshot_id,
+      height: attestation.height ?? null,
+      issued_supply: {
+        raw: attestation.total_supply_leri,
+        formatted: formatLeri(attestation.total_supply_leri),
       },
+      supply_ceiling: null,
+      remaining_issuance_capacity: null,
+      backing_value: eligibleReserve === null
+        ? null
+        : { raw: eligibleReserve, formatted: eligibleReserve },
+      backing_unit: "USD",
+      collateralization_ratio: ratioPercent === null
+        ? null
+        : { raw: ratio, percent: ratioPercent },
+      reserve: {
+        available: reserveAvailable,
+        status: reserveAvailable ? reserve?.reserve_status ?? null : null,
+        snapshot_id: reserveAvailable ? reserve?.id ?? null : null,
+        supply_snapshot_id: reserveAvailable ? reserve?.supply_snapshot_id ?? null : null,
+        observed_at: reserveAvailable ? reserve?.created_at ?? null : null,
+      },
+      mint_policy: null,
+      source: {
+        mode: "canonical_indexer_attestation",
+        issued_supply: "canonical_chain_snapshot",
+        reserve: reserveAvailable ? "supply_matched_canonical_snapshot" : "unavailable",
+        policy_fields: "unavailable",
+        derived_fields: ratioPercent === null ? "unavailable" : "display_only_from_canonical_ratio",
+      },
+      updated_at: attestation.time ?? null,
     });
-
-    const attestationText = await attestationResponse.text();
-
-    if (attestationResponse.ok) {
-      const attestation = attestationText ? JSON.parse(attestationText) : null;
-
-      if (attestation) {
-        const totalSupply = Number(attestation.total_supply ?? 0);
-        const reserves = Number(attestation.reserves ?? 0);
-        const ratio = totalSupply > 0 ? (reserves / totalSupply) * 100 : 0;
-        const supplyCeiling = 20_000_000;
-        const remaining = Math.max(supplyCeiling - totalSupply, 0);
-
-        return NextResponse.json({
-          asset: "RUSD",
-          unit: "leri",
-          contract_address: "pending_live_contract_sync",
-          treasury_multisig: SPHERIO_TREASURY_MULTISIG,
-          issued_supply: {
-            raw: String(totalSupply),
-            formatted: formatWhole(totalSupply),
-          },
-          supply_ceiling: {
-            raw: String(supplyCeiling),
-            formatted: formatWhole(supplyCeiling),
-          },
-          remaining_issuance_capacity: {
-            raw: String(remaining),
-            formatted: formatWhole(remaining),
-          },
-          backing_value: {
-            raw: String(reserves),
-            formatted: formatWhole(reserves),
-          },
-          collateralization_ratio: {
-            bps: Math.round(ratio * 100),
-            percent: `${ratio.toFixed(2)}%`,
-          },
-          mint_policy: {
-            daily_mint_cap: {
-              raw: "100000",
-              formatted: formatWhole(100000),
-            },
-            epoch_mint_cap: {
-              raw: "500000",
-              formatted: formatWhole(500000),
-            },
-            epoch_window_hours: 24,
-          },
-          source: {
-            mode: "attestation_bridge",
-            issued_supply: "indexer_attestation",
-            policy_fields: "fallback_policy_shape",
-            derived_fields: "derived_from_attestation",
-          },
-          updated_at: new Date().toISOString(),
-        });
-      }
-    }
-
-    return NextResponse.json(buildFallbackRusdState());
   } catch {
-    return NextResponse.json(buildFallbackRusdState());
+    return unavailable(503);
   }
 }

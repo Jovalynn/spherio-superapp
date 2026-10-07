@@ -3,64 +3,39 @@
 import { useEffect, useMemo, useState } from "react";
 
 type RusdStateResponse = {
+  available: boolean;
   asset: "RUSD";
   unit: string;
   contract_address: string;
-  treasury_multisig: string;
+  supply_snapshot_id: string;
+  height: string | null;
   issued_supply: {
     raw: string;
     formatted: string;
   };
-  supply_ceiling: {
-    raw: string;
-    formatted: string;
-  };
-  remaining_issuance_capacity: {
-    raw: string;
-    formatted: string;
-  };
-  backing_value: {
-    raw: string;
-    formatted: string;
-  };
-  collateralization_ratio: {
-    bps: number;
-    percent: string;
-  };
+  supply_ceiling: { raw: string; formatted: string } | null;
+  remaining_issuance_capacity: { raw: string; formatted: string } | null;
+  backing_value: { raw: string; formatted: string } | null;
+  backing_unit: string;
+  collateralization_ratio: { raw: string; percent: string } | null;
+  reserve: { available: boolean; status: string | null; snapshot_id: string | null; supply_snapshot_id: string | null; observed_at: string | null };
   mint_policy: {
-    daily_mint_cap: {
-      raw: string;
-      formatted: string;
-    };
-    epoch_mint_cap: {
-      raw: string;
-      formatted: string;
-    };
+    daily_mint_cap: { raw: string; formatted: string };
+    epoch_mint_cap: { raw: string; formatted: string };
     epoch_window_hours: number;
-  };
+  } | null;
   source: {
     mode: string;
     issued_supply: string;
+    reserve: string;
     policy_fields: string;
     derived_fields: string;
   };
-  updated_at: string;
+  updated_at: string | null;
 };
 
 const RUSD_LOGO =
   "https://raw.githubusercontent.com/Lerivee/RUSD/refs/heads/main/Untitled%20design.png";
-
-function toNumber(value?: string | null) {
-  if (!value) return 0;
-  const parsed = Number(value.replace(/,/g, ""));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function formatInt(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 function shortAddr(addr?: string | null) {
   if (!addr || addr === "pending_live_contract_sync" || addr === "unavailable") {
@@ -72,8 +47,8 @@ function shortAddr(addr?: string | null) {
 
 function sourceModeLabel(mode?: string) {
   switch (mode) {
-    case "attestation_bridge":
-      return "Attestation bridge";
+    case "canonical_indexer_attestation":
+      return "Canonical indexer attestation";
     case "fallback_attestation_mode":
     case "fallback_attestation_shape":
       return "Fallback attestation mode";
@@ -83,52 +58,50 @@ function sourceModeLabel(mode?: string) {
 }
 
 function complianceLabel(ratioPct: number) {
-  if (ratioPct >= 120) return "Above reserve target";
-  if (ratioPct >= 100) return "Above minimum backing threshold";
-  if (ratioPct > 0) return "Below minimum backing threshold";
+  if (ratioPct >= 120) return "At or above the 120% mature target";
+  if (ratioPct >= 100) return "At or above the 100% minimum";
+  if (ratioPct > 0) return "Below the 100% minimum";
   return "Not yet attested";
 }
 
 function derivePhase(overview: RusdStateResponse | null) {
-  if (!overview) {
+  if (!overview?.collateralization_ratio) {
     return {
-      code: "phase_1",
-      title: "Phase 1 · Bootstrap Issuance",
-      short: "Bootstrap",
-      description:
-        "Early network formation stage. Settlement utility is established before reserve maturity is fully realized.",
+      code: "unverified",
+      title: "Reserve posture unverified",
+      short: "Unverified",
+      description: "A coherent canonical reserve snapshot is not available. No current reserve phase is inferred.",
     };
   }
 
   const ratio = Number(overview.collateralization_ratio.percent.replace("%", "")) || 0;
   const mode = overview.source?.mode ?? "";
 
-  if (ratio >= 120 && mode === "attestation_bridge") {
+  if (ratio >= 120 && mode === "canonical_indexer_attestation") {
     return {
       code: "phase_3",
-      title: "Phase 3 · Full Backing",
-      short: "Fully Backed",
+      title: "Mature-reserve framework",
+      short: "At mature target",
       description:
-        "Reserve maturity achieved. RUSD operates as a fully backed, overcollateralized settlement asset.",
+        "The matched canonical reserve snapshot reports the 120% mature target. This is an observation, not authorization to issue.",
     };
   }
 
-  if (ratio > 0) {
+  if (ratio >= 100) {
     return {
       code: "phase_2",
-      title: "Phase 2 · Partial Collateralization",
+      title: "Partial-reserve framework",
       short: "Partial",
       description:
-        "Collateral support is present but not yet at full reserve maturity. Issuance is still governed under phased settlement discipline.",
+        "The matched canonical reserve snapshot reports a ratio between the 100% minimum and 120% mature target.",
     };
   }
 
   return {
-    code: "phase_1",
-    title: "Phase 1 · Bootstrap Issuance",
-    short: "Bootstrap",
-    description:
-      "Settlement layer is active while reserve structure and attestation depth continue to mature.",
+    code: "below_minimum",
+    title: "Below reserve minimum",
+    short: "Below minimum",
+    description: "The matched canonical reserve snapshot reports less than the 100% minimum backing threshold; freeze enforcement is not asserted by this display.",
   };
 }
 
@@ -229,7 +202,6 @@ function TableCell({
 
 export default function RUSDPage() {
   const [overview, setOverview] = useState<RusdStateResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
@@ -237,7 +209,6 @@ export default function RUSDPage() {
 
     async function load() {
       try {
-        setLoading(true);
         setLoadError("");
 
         const response = await fetch("/api/rusd/state", {
@@ -261,10 +232,6 @@ export default function RUSDPage() {
             error instanceof Error ? error.message : "Failed to load RUSD state",
           );
         }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
       }
     }
 
@@ -275,15 +242,10 @@ export default function RUSDPage() {
     };
   }, []);
 
-  const liveSupply = toNumber(overview?.issued_supply?.raw);
-  const supplyCeiling = toNumber(overview?.supply_ceiling?.raw);
-  const liveBackingValue = toNumber(overview?.backing_value?.raw);
-  const ratioPct = overview
+  const ratioPct = overview?.collateralization_ratio
     ? Number(overview.collateralization_ratio.percent.replace("%", "")) || 0
     : 0;
-  const epochWindowHours = overview?.mint_policy?.epoch_window_hours ?? 0;
-  const utilization = supplyCeiling > 0 ? (liveSupply / supplyCeiling) * 100 : 0;
-  const collateralBuffer = Math.max(liveBackingValue - liveSupply, 0);
+  const collateralBuffer = "—";
 
   const phase = useMemo(() => derivePhase(overview), [overview]);
   const compliance = complianceLabel(ratioPct);
@@ -329,9 +291,9 @@ export default function RUSDPage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <StatePill strong>Integrity: LIVE</StatePill>
+                <StatePill strong>{overview?.available ? "Canonical supply verified" : "Evidence unavailable"}</StatePill>
                 <StatePill>Theme: Sovereign Crimson</StatePill>
-                <StatePill>{overview ? "Monetary Feed Active" : "Feed Degraded"}</StatePill>
+                <StatePill>{overview?.available ? "Canonical Supply Active" : "Feed Unavailable"}</StatePill>
               </div>
             </div>
           </div>
@@ -344,9 +306,7 @@ export default function RUSDPage() {
                 Degraded state
               </div>
               <div className="mt-3">
-                RUSD state is currently unavailable from the backend. The terminal remains online
-                so the settlement posture, attestation framing, and policy structure can still be
-                reviewed while the live state feed is restored.
+                Canonical RUSD supply and reserve evidence is currently unavailable. Monetary values and active policy parameters are withheld until verified snapshots are available.
               </div>
               {loadError ? (
                 <div className="mt-2 text-[#9E948C]">Backend note: {loadError}</div>
@@ -370,8 +330,8 @@ export default function RUSDPage() {
             <KpiCard
               label="Backing Reference"
               value={overview?.backing_value?.formatted ?? "—"}
-              suffix="RUSD"
-              sublabel="Current reserve / backing reference value"
+              suffix="USD"
+              sublabel="Eligible reserve value from a supply-matched snapshot"
             />
             <KpiCard
               label="Coverage Ratio"
@@ -487,7 +447,7 @@ export default function RUSDPage() {
                       {overview?.mint_policy?.epoch_mint_cap?.formatted ?? "—"}
                     </div>
                     <div className="mt-1 text-sm text-[#CFC7BE]">
-                      {overview ? `${epochWindowHours}h window` : "—"}
+                      Issuance window not reported
                     </div>
                   </div>
                 </div>
@@ -499,18 +459,18 @@ export default function RUSDPage() {
                         Issuance Utilization
                       </div>
                       <div className="mt-2 text-4xl font-semibold text-[#F4F1EA]">
-                        {overview ? `${utilization.toFixed(1)}%` : "—"}
+                        Unavailable
                       </div>
                     </div>
                     <div className="text-right text-sm text-[#CFC7BE]">
-                      current supply / active ceiling
+                      No canonical issuance ceiling is published
                     </div>
                   </div>
 
                   <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/10">
                     <div
                       className="h-full rounded-full bg-[linear-gradient(90deg,#8B0000,#B22222,#F4F1EA)]"
-                      style={{ width: `${overview ? Math.min(utilization, 100) : 0}%` }}
+                      style={{ width: "0%" }}
                     />
                   </div>
                 </div>
@@ -544,9 +504,9 @@ export default function RUSDPage() {
                   </div>
                   <div className="mt-3 space-y-2 text-sm leading-7 text-[#CFC7BE]">
                     <div>
-                      Treasury Multisig:{" "}
+                      Treasury authority:{" "}
                       <span className="text-[#F4F1EA]">
-                        {shortAddr(overview?.treasury_multisig)}
+                        Not established by this attestation feed
                       </span>
                     </div>
                     <div>
@@ -571,7 +531,7 @@ export default function RUSDPage() {
                     </div>
                     <div>
                       Buffer:{" "}
-                      <span className="text-[#F4F1EA]">{formatInt(collateralBuffer)}</span>
+                      <span className="text-[#F4F1EA]">{collateralBuffer}</span>
                     </div>
                   </div>
                 </div>
@@ -675,21 +635,19 @@ export default function RUSDPage() {
                   {sourceModeLabel(overview?.source?.mode)}
                 </div>
                 <div className="mt-2 text-sm leading-7 text-[#CFC7BE]">
-                  This indicates whether the page is reading live attestation bridge data
-                  or operating in fallback disclosure mode.
+                  This indicates whether the page is reading canonical indexer attestation or an unavailable evidence feed.
                 </div>
               </div>
 
               <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">
                 <div className="text-[10px] uppercase tracking-[0.18em] text-[#9E948C]">
-                  Active ceiling
+                  Issuance ceiling
                 </div>
                 <div className="mt-2 text-lg font-semibold text-[#F4F1EA]">
                   {overview?.supply_ceiling?.formatted ?? "—"} RUSD
                 </div>
                 <div className="mt-2 text-sm leading-7 text-[#CFC7BE]">
-                  This should represent the issuance ceiling under the current phase,
-                  not an overstated final-state ceiling.
+                  No canonical issuance ceiling is provided by the current attestation feed.
                 </div>
               </div>
 
