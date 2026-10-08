@@ -22,9 +22,6 @@ yarn-error.log*
 .env
 .env.*
 !.env.example
-!.env.production
-!.env.production.local
-!.env.local
 
 # git / editor
 .git

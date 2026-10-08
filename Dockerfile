@@ -1,7 +1,38 @@
 FROM node:20-bullseye
+
+ARG SOURCE_REVISION=unknown
+ARG SOURCE_ARCHIVE_SHA256=unknown
+ARG NEXT_PUBLIC_SUPERAPP_URL
+ARG NEXT_PUBLIC_SPO20_FACTORY_ADDRESS
+ARG NEXT_PUBLIC_SPHERIO_TREASURY_MULTISIG
+ARG NEXT_PUBLIC_SPHERIO_RPC
+ARG NEXT_PUBLIC_SPHERIO_REST
+ARG NEXT_PUBLIC_RPC_URL
+ARG NEXT_PUBLIC_RPC_ENDPOINT
+ARG NEXT_PUBLIC_RIODEX_ROUTER_ADDRESS
+ARG NEXT_PUBLIC_RIODEX_FACTORY_ADDRESS
+ARG NEXT_PUBLIC_REST_URL
+ARG NEXT_PUBLIC_PUMP_FINALIZER_ADDRESS
+ARG NEXT_PUBLIC_PUMP_FACTORY_ADDRESS
+ARG NEXT_PUBLIC_PUMP_CREATE_FEE_URIO
+ARG NEXT_PUBLIC_PRIME_CREATE_FEE_URIO
+ARG NEXT_PUBLIC_ISSUANCE_FEE_AMOUNT
+ARG NEXT_PUBLIC_INDEXER_URL
+ARG NEXT_PUBLIC_INDEXER
+ARG NEXT_PUBLIC_FEE_DENOM
+ARG NEXT_PUBLIC_EXPLORER_TX_BASE
+ARG NEXT_PUBLIC_CREATE_TOKEN_FEE_URIO
+ARG NEXT_PUBLIC_COIN_TYPE
+ARG NEXT_PUBLIC_CHAIN_NAME
+ARG NEXT_PUBLIC_CHAIN_ID
+ARG NEXT_PUBLIC_BASE_URL
+ARG NEXT_PUBLIC_API_BASE
 RUN apt-get update && apt-get install -y \
     libc6 \
     && rm -rf /var/lib/apt/lists/*
+
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION \
+      org.opencontainers.image.source-archive-sha256=$SOURCE_ARCHIVE_SHA256
 
 WORKDIR /app
 
@@ -10,7 +41,7 @@ RUN npm config set registry https://registry.npmjs.org/ \
   && npm config set fetch-retries 5 \
   && npm config set fetch-retry-mintimeout 20000 \
   && npm config set fetch-retry-maxtimeout 120000 \
-  && npm install --legacy-peer-deps --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
+  && npm ci --legacy-peer-deps --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 COPY . .
 
 RUN npm run build
