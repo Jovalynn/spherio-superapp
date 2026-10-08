@@ -27,10 +27,6 @@ ARG NEXT_PUBLIC_CHAIN_NAME
 ARG NEXT_PUBLIC_CHAIN_ID
 ARG NEXT_PUBLIC_BASE_URL
 ARG NEXT_PUBLIC_API_BASE
-RUN apt-get update && apt-get install -y \
-    libc6 \
-    && rm -rf /var/lib/apt/lists/*
-
 LABEL org.opencontainers.image.revision=$SOURCE_REVISION \
       org.opencontainers.image.source-archive-sha256=$SOURCE_ARCHIVE_SHA256
 
