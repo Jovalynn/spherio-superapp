@@ -31,6 +31,7 @@ function short(value?: string | null) {
 }
 
 function compact(value: number | null | undefined, decimals = 6) {
+  if (value === null || value === undefined) return "—";
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
 
@@ -40,6 +41,7 @@ function compact(value: number | null | undefined, decimals = 6) {
 }
 
 function money(value: number | null | undefined, decimals = 2) {
+  if (value === null || value === undefined) return "—";
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
 
@@ -54,8 +56,8 @@ function sourceLabel(source?: string | null) {
       return "RIO/RUSD CPMM";
     case "spo20_riodex_cpmm":
       return "SPO-20/RIO CPMM";
-    case "canonical_rusd_par":
-      return "RUSD Par";
+    case "rusd_nominal_balance":
+      return "RUSD balance";
     case "embedded_asset_value":
       return "Embedded Value";
     case "embedded_rio_value":
@@ -224,9 +226,9 @@ export default function RioExAssetsPage() {
   const totals = useMemo(() => {
     return {
       totalRio: portfolio?.totals?.rio ?? null,
-      totalRusd: portfolio?.totals?.rusd ?? 0,
-      totalUsd: portfolio?.totals?.usd ?? 0,
-      totalUsdt: portfolio?.totals?.usdt ?? 0,
+      totalRusd: portfolio?.totals?.rusd ?? null,
+      totalUsd: portfolio?.totals?.usd ?? null,
+      totalUsdt: portfolio?.totals?.usdt ?? null,
       totalBtc: portfolio?.totals?.btc ?? null,
       ownedAssets: assets.length,
       pricedCount: pricedAssets.length,

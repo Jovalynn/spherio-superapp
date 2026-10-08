@@ -26,23 +26,19 @@ export function enrichScreenerRowWithRioValuation(
     asFiniteNumber(row?.liquidityRio);
 
   const liquidityRusdDirect =
-    asFiniteNumber(row?.liquidity_rusd) ??
-    asFiniteNumber(row?.liquidity_usd) ??
-    asFiniteNumber(row?.liquidity_quote);
+    asFiniteNumber(row?.liquidity_rusd);
 
   const marketCapRio =
     asFiniteNumber(row?.market_cap_rio) ??
     asFiniteNumber(row?.marketCapRio);
 
   const marketCapRusdDirect =
-    asFiniteNumber(row?.market_cap_rusd) ??
-    asFiniteNumber(row?.market_cap) ??
-    asFiniteNumber(row?.fdv_reference_value);
+    asFiniteNumber(row?.market_cap_rusd);
 
   const priceRusd =
-    priceRio !== null && rioPriceRusd !== null
+      priceRio !== null && rioPriceRusd !== null
       ? priceRio * rioPriceRusd
-      : asFiniteNumber(row?.price_rusd) ?? asFiniteNumber(row?.price_usd);
+      : asFiniteNumber(row?.price_rusd);
 
   const liquidityRusd =
     liquidityRusdDirect ??

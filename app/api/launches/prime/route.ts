@@ -34,8 +34,8 @@ export async function GET(request: NextRequest) {
         primeEconomics: {
           creationFeeRio: standardCreationFeeRio,
           creationFeeRusd: standardCreationFeeRusd,
-          creationFeeUsd: standardCreationFeeRusd,
-          creationFeeUsdt: standardCreationFeeRusd,
+          creationFeeUsd: null,
+          creationFeeUsdt: null,
           liquidityGrades: {
             minister: {
               label: "Minister",

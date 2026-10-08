@@ -61,8 +61,8 @@ export async function GET(request: Request) {
 
       price: {
         rusd: price?.rusd ?? null,
-        usd: price?.usd ?? price?.rusd ?? null,
-        usdt: price?.usdt ?? price?.rusd ?? null,
+        usd: price?.usd ?? null,
+        usdt: price?.usdt ?? null,
         btc: price?.btc ?? null,
       },
 

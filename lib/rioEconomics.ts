@@ -41,12 +41,14 @@ export function valueRioAmount(
   }
 
   const rusd = rio * price;
+  const usdPrice = asFiniteNumber(valuation?.price?.rio?.usd);
+  const usdtPrice = asFiniteNumber(valuation?.price?.rio?.usdt);
 
   return {
     rio,
     rusd,
-    usd: rusd,
-    usdt: rusd,
+    usd: usdPrice !== null ? rio * usdPrice : null,
+    usdt: usdtPrice !== null ? rio * usdtPrice : null,
     btc: null,
     source,
     status: "priced",

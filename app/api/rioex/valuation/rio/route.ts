@@ -369,8 +369,8 @@ export async function GET() {
         price: {
           rio: {
             rusd: rioInRusd,
-            usd: rioInRusd,
-            usdt: rioInRusd,
+            usd: null,
+            usdt: null,
             btc: null,
           },
         },
@@ -401,8 +401,8 @@ export async function GET() {
         price: {
           rio: {
             rusd: rioInRusd,
-            usd: rioInRusd,
-            usdt: rioInRusd,
+            usd: null,
+            usdt: null,
             btc: null,
           },
         },
@@ -434,8 +434,8 @@ export async function GET() {
         price: {
           rio: {
             rusd: rioInRusd,
-            usd: rioInRusd,
-            usdt: rioInRusd,
+            usd: null,
+            usdt: null,
             btc: null,
           },
         },

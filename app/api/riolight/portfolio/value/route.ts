@@ -105,13 +105,15 @@ async function enrichSpo20Assets(params: {
           priceRusd && priceRusd > 0
             ? asset.amount * priceRusd
             : valueRio * rioPriceRusd;
+        const priceUsd = asNumber(result.json?.price?.asset?.usd);
+        const priceUsdt = asNumber(result.json?.price?.asset?.usdt);
 
         return {
           ...asset,
           value_rio: valueRio,
           value_rusd: valueRusd,
-          value_usd: valueRusd,
-          value_usdt: valueRusd,
+          value_usd: priceUsd !== null ? asset.amount * priceUsd : null,
+          value_usdt: priceUsdt !== null ? asset.amount * priceUsdt : null,
           valuation_source: "spo20_riodex_cpmm",
           valuation_status: "priced" as const,
         };
@@ -125,25 +127,15 @@ async function enrichSpo20Assets(params: {
     }),
   );
 
-  const totalRusd = enrichedAssets.reduce(
-    (sum, asset) => sum + (asset.value_rusd ?? 0),
-    0,
-  );
+  const completeTotal = (values: Array<number | null>) =>
+    values.every((value) => value !== null)
+      ? values.reduce<number>((sum, value) => sum + (value as number), 0)
+      : null;
 
-  const totalUsd = enrichedAssets.reduce(
-    (sum, asset) => sum + (asset.value_usd ?? 0),
-    0,
-  );
-
-  const totalUsdt = enrichedAssets.reduce(
-    (sum, asset) => sum + (asset.value_usdt ?? 0),
-    0,
-  );
-
-  const totalRio =
-    rioPriceRusd > 0
-      ? totalRusd / rioPriceRusd
-      : enrichedAssets.reduce((sum, asset) => sum + (asset.value_rio ?? 0), 0);
+  const totalRusd = completeTotal(enrichedAssets.map((asset) => asset.value_rusd));
+  const totalUsd = completeTotal(enrichedAssets.map((asset) => asset.value_usd));
+  const totalUsdt = completeTotal(enrichedAssets.map((asset) => asset.value_usdt));
+  const totalRio = completeTotal(enrichedAssets.map((asset) => asset.value_rio));
 
   return {
     ...portfolio,

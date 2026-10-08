@@ -171,8 +171,8 @@ export async function GET(request: NextRequest) {
             asset: {
               rio: priceRio,
               rusd: priceRusd,
-              usd: priceRusd,
-              usdt: priceRusd,
+              usd: null,
+              usdt: null,
               btc: null,
             },
             rio: {

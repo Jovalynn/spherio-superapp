@@ -10,6 +10,7 @@
     "test:pump-safety": "node --test tests/pumpExecutionSafety.test.mjs",
     "test:rio-allocation-ui": "node --test tests/rioAllocationPresentation.test.mjs",
     "test:rusd-sot": "node --test tests/rusdStateAuthority.test.mjs",
+    "test:rio-quote-denomination": "node tests/rioQuoteDenomination.test.mjs",
     "test:pump-finalizer-auth": "node --test tests/pumpFinalizerAuth.test.mjs"
   },
   "dependencies": {

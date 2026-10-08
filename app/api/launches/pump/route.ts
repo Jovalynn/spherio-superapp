@@ -150,24 +150,24 @@ export async function GET(request: NextRequest) {
             logoUrl: item.logo || undefined,
             ageLabel: buildAgeLabel(index, item.created_at ?? item.market?.pair_created_time ?? null),
 
-            // Legacy field preserved, now aligned to RUSD when available.
-            marketCapUsd: marketCapRusd ?? marketCapRio,
+            // Legacy USD field is unavailable without independent USD pricing.
+            marketCapUsd: null,
 
             marketCapRio,
             marketCapRusd,
-            marketCapUsdt: marketCapRusd,
+            marketCapUsdt: null,
             priceRio: effectivePriceRio,
             priceRusd,
-            priceUsd: priceRusd,
-            priceUsdt: priceRusd,
+            priceUsd: null,
+            priceUsdt: null,
             liquidityRio: reserve0Rio,
             liquidityRusd,
-            liquidityUsd: liquidityRusd,
-            liquidityUsdt: liquidityRusd,
+            liquidityUsd: null,
+            liquidityUsdt: null,
             volume24hRio,
             volume24hRusd,
-            volume24hUsd: volume24hRusd,
-            volume24hUsdt: volume24hRusd,
+            volume24hUsd: null,
+            volume24hUsdt: null,
 
             progressPercent: progressSeed,
             trend,

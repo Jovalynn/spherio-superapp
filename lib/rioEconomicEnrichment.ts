@@ -24,8 +24,8 @@ export async function fetchRioPriceContext(origin: string): Promise<RioPriceCont
     const json = await response.json();
 
     const rioRusd = asFiniteNumber(json?.price?.rio?.rusd);
-    const rioUsd = asFiniteNumber(json?.price?.rio?.usd) ?? rioRusd;
-    const rioUsdt = asFiniteNumber(json?.price?.rio?.usdt) ?? rioRusd;
+    const rioUsd = asFiniteNumber(json?.price?.rio?.usd);
+    const rioUsdt = asFiniteNumber(json?.price?.rio?.usdt);
     const rioBtc = asFiniteNumber(json?.price?.rio?.btc);
 
     return {
@@ -69,8 +69,8 @@ function convertRioAmount(value: unknown, price: RioPriceContext) {
   return {
     rio,
     rusd: rio * price.rioRusd,
-    usd: price.rioUsd !== null ? rio * price.rioUsd : rio * price.rioRusd,
-    usdt: price.rioUsdt !== null ? rio * price.rioUsdt : rio * price.rioRusd,
+    usd: price.rioUsd !== null ? rio * price.rioUsd : null,
+    usdt: price.rioUsdt !== null ? rio * price.rioUsdt : null,
     btc: price.rioBtc !== null ? rio * price.rioBtc : null,
     valuationStatus: "priced",
     valuationSource: price.source,
@@ -91,8 +91,8 @@ function convertRioToStable(rio: number | null, price: RioPriceContext) {
 
   return {
     rusd: rio * price.rioRusd,
-    usd: price.rioUsd !== null ? rio * price.rioUsd : rio * price.rioRusd,
-    usdt: price.rioUsdt !== null ? rio * price.rioUsdt : rio * price.rioRusd,
+    usd: price.rioUsd !== null ? rio * price.rioUsd : null,
+    usdt: price.rioUsdt !== null ? rio * price.rioUsdt : null,
     btc: price.rioBtc !== null ? rio * price.rioBtc : null,
   };
 }
@@ -108,7 +108,6 @@ function enrichScreenerLikeRow(out: Record<string, any>, price: RioPriceContext)
 
   const rawPrice = asFiniteNumber(out.price ?? out.effective_price ?? out.effectivePrice);
   const liquidityQuote = asFiniteNumber(out.liquidity_quote ?? out.liquidityQuote);
-  const liquidityUsd = asFiniteNumber(out.liquidity_usd ?? out.liquidityUsd);
 
   const fdvReferenceValue = asFiniteNumber(out.fdv_reference_value ?? out.fdvReferenceValue);
   const fdvReferenceAsset = String(out.fdv_reference_asset ?? out.fdvReferenceAsset ?? "").trim().toUpperCase();
@@ -150,13 +149,11 @@ function enrichScreenerLikeRow(out: Record<string, any>, price: RioPriceContext)
   const marketCapStable = convertRioToStable(marketCapRio, price);
 
   const tokenPriceRusd: number | null = priceStable.rusd;
-  const tokenPriceUsd: number | null =
-    priceStable.usd !== null ? priceStable.usd : tokenPriceRusd;
-  const tokenPriceUsdt: number | null =
-    priceStable.usdt !== null ? priceStable.usdt : tokenPriceRusd;
+  const tokenPriceUsd: number | null = priceStable.usd;
+  const tokenPriceUsdt: number | null = priceStable.usdt;
 
-  // Existing liquidityUsd should be preserved if already supplied.
-  // If we only have token-side liquidity on a RIO/token pair, convert it through token price.
+  // Only derive a denomination when its own price evidence is available.
+  // Unknown quote liquidity must not be promoted to RUSD, USD, or USDT.
   let liquidityStable: {
     rusd: number | null;
     usd: number | null;
@@ -181,9 +178,9 @@ function enrichScreenerLikeRow(out: Record<string, any>, price: RioPriceContext)
     };
   } else {
     liquidityStable = {
-      rusd: liquidityUsd,
-      usd: liquidityUsd,
-      usdt: liquidityUsd,
+      rusd: asFiniteNumber(out.liquidity_rusd ?? out.liquidityRusd),
+      usd: null,
+      usdt: null,
       btc: null,
     };
   }
@@ -343,10 +340,10 @@ export function addLaunchEconomicsBlock<T extends Record<string, any>>(
       },
       primeStandardCreationFee: {
         rusd: creationFeeRusd,
-        usd: creationFeeRusd,
-        usdt: creationFeeRusd,
+        usd: null,
+        usdt: null,
         rio: creationFeeRio,
-        note: "Prime production-style project creation fee reference.",
+        note: "Prime production-style project creation fee reference; USD and USDT values require independent pricing evidence.",
       },
       bridgeReadiness: {
         axelar: "planned",
