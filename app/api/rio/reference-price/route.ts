@@ -43,6 +43,7 @@ type ReferenceResponse = {
     | "reserve_spot_only"
     | "partial"
     | "missing_reference_markets"
+    | "unavailable_reference_conversion"
     | "upstream_reference"
     | "error";
   primary: ReferenceTier;
@@ -55,7 +56,7 @@ type ReferenceResponse = {
     quoteSymbol: TierSymbol | null;
     liquidityUsdEstimate: number | null;
   };
-  weighting: "liquidity_weighted";
+  weighting: "none";
   warning: string | null;
   updatedAt: string;
   attempted_upstreams?: string[];
@@ -319,7 +320,8 @@ function resolveTierFromRows(
       quoteReserve > 0;
 
     const spot = valid ? quoteReserve! / rioReserve! : null;
-    const liquidityUsdEstimate = valid ? quoteReserve! * 2 : null;
+    // Quote reserves are not USD liquidity without an independently verified conversion.
+    const liquidityUsdEstimate = null;
 
     const status: ReferenceTier["status"] = valid ? "twap_pending" : "invalid_reserves";
 
@@ -354,86 +356,31 @@ function resolveTierFromRows(
   return emptyTier(tier, priority);
 }
 
-function weighted(values: Array<{ value: number | null; weight: number | null }>) {
-  const usable = values.filter(
-    (item) =>
-      item.value !== null &&
-      item.weight !== null &&
-      Number.isFinite(item.value) &&
-      Number.isFinite(item.weight) &&
-      item.weight > 0,
-  ) as Array<{ value: number; weight: number }>;
+export function buildResponseFromTiers(tiers: ReferenceTier[], source: string): ReferenceResponse {
+  const safeTiers = tiers.map((tier) => ({ ...tier, liquidityUsdEstimate: null }));
+  const primary = safeTiers.find((tier) => tier.symbol === "RUSD") || emptyTier("RUSD", "primary");
+  const secondary = safeTiers.find((tier) => tier.symbol === "USDC") || emptyTier("USDC", "secondary");
+  const tertiary = safeTiers.find((tier) => tier.symbol === "USDT") || emptyTier("USDT", "tertiary");
 
-  if (!usable.length) return null;
+  const preferred = primary.spot !== null ? primary : null;
 
-  const totalWeight = usable.reduce((sum, item) => sum + item.weight, 0);
-  if (totalWeight <= 0) return null;
-
-  return usable.reduce((sum, item) => sum + item.value * item.weight, 0) / totalWeight;
-}
-
-function weightedTwap(tiers: ReferenceTier[], key: keyof ReferenceTier["twap"]) {
-  return weighted(
-    tiers.map((tier) => ({
-      value: tier.twap[key],
-      weight: tier.liquidityUsdEstimate,
-    })),
-  );
-}
-
-function buildResponseFromTiers(tiers: ReferenceTier[], source: string): ReferenceResponse {
-  const primary = tiers.find((tier) => tier.symbol === "RUSD") || emptyTier("RUSD", "primary");
-  const secondary = tiers.find((tier) => tier.symbol === "USDC") || emptyTier("USDC", "secondary");
-  const tertiary = tiers.find((tier) => tier.symbol === "USDT") || emptyTier("USDT", "tertiary");
-
-  const spot = weighted(
-    tiers.map((tier) => ({
-      value: tier.spot,
-      weight: tier.liquidityUsdEstimate,
-    })),
-  );
-
-  const twap = {
-    "5m": weightedTwap(tiers, "5m"),
-    "1h": weightedTwap(tiers, "1h"),
-    "6h": weightedTwap(tiers, "6h"),
-    "24h": weightedTwap(tiers, "24h"),
-  };
-
-  const preferred =
-    primary.spot !== null
-      ? primary
-      : secondary.spot !== null
-        ? secondary
-        : tertiary.spot !== null
-          ? tertiary
-          : null;
-
-  const liveTiers = tiers.filter((tier) => tier.spot !== null);
-  const anyTwap = Object.values(twap).some((value) => value !== null);
-
+  const liveTiers = safeTiers.filter((tier) => tier.spot !== null);
   const status: ReferenceResponse["status"] =
     liveTiers.length === 0
       ? "missing_reference_markets"
-      : anyTwap
-        ? "live"
-        : liveTiers.length < 3
-          ? "partial"
-          : "reserve_spot_only";
+      : "unavailable_reference_conversion";
 
   const warning =
     liveTiers.length === 0
-      ? "No RIO reference markets were found. Seed RIO/RUSD, RIO/USDC, or RIO/USDT and index reserves."
-      : anyTwap
-        ? null
-        : "Spot price is reserve-derived. TWAP will activate after market snapshots are indexed.";
+      ? "No RIO reference markets were found."
+      : "Per-tier observations retain their quote denomination. A verified conversion to USD is unavailable.";
 
   return {
     ok: true,
     symbol: "RIO",
     quote: "USD",
-    spot,
-    twap,
+    spot: null,
+    twap: { "5m": null, "1h": null, "6h": null, "24h": null },
     sourcePair: preferred?.pairAddress || null,
     source,
     status,
@@ -445,15 +392,15 @@ function buildResponseFromTiers(tiers: ReferenceTier[], source: string): Referen
       rio: preferred?.rioReserve ?? null,
       quote: preferred?.quoteReserve ?? null,
       quoteSymbol: preferred?.symbol ?? null,
-      liquidityUsdEstimate: preferred?.liquidityUsdEstimate ?? null,
+      liquidityUsdEstimate: null,
     },
-    weighting: "liquidity_weighted",
+    weighting: "none",
     warning,
     updatedAt: new Date().toISOString(),
   };
 }
 
-function normalizeUpstreamReference(payload: any): ReferenceResponse | null {
+export function normalizeUpstreamReference(payload: any): ReferenceResponse | null {
   if (!payload || payload.ok === false) return null;
 
   const hasTiers =
@@ -490,27 +437,16 @@ function normalizeUpstreamReference(payload: any): ReferenceResponse | null {
       spot: numeric(sourceTier?.spot),
       rioReserve: numeric(sourceTier?.rioReserve ?? sourceTier?.rio_reserve),
       quoteReserve: numeric(sourceTier?.quoteReserve ?? sourceTier?.quote_reserve),
-      liquidityUsdEstimate: numeric(
-        sourceTier?.liquidityUsdEstimate ??
-          sourceTier?.liquidity_usd_estimate ??
-          sourceTier?.liquidityUsd ??
-          sourceTier?.liquidity_usd,
-      ),
+      // Upstream estimates are not evidence of a verified quote conversion.
+      liquidityUsdEstimate: null,
     };
   });
 
   const response = buildResponseFromTiers(tiers, firstText(payload.source, "indexer_reference_engine"));
   return {
     ...response,
-    spot: numeric(payload.spot) ?? response.spot,
-    twap: {
-      "5m": numeric(payload?.twap?.["5m"] ?? payload?.twap5m ?? payload?.twap_5m) ?? response.twap["5m"],
-      "1h": numeric(payload?.twap?.["1h"] ?? payload?.twap1h ?? payload?.twap_1h) ?? response.twap["1h"],
-      "6h": numeric(payload?.twap?.["6h"] ?? payload?.twap6h ?? payload?.twap_6h) ?? response.twap["6h"],
-      "24h": numeric(payload?.twap?.["24h"] ?? payload?.twap24h ?? payload?.twap_24h) ?? response.twap["24h"],
-    },
-    status: "upstream_reference",
-    warning: payload.warning ?? response.warning,
+    status: response.status,
+    warning: response.warning,
   };
 }
 
