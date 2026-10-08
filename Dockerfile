@@ -1,4 +1,4 @@
-FROM node:20-bullseye
+FROM node:22-bookworm
 
 ARG SOURCE_REVISION=unknown
 ARG SOURCE_ARCHIVE_SHA256=unknown
