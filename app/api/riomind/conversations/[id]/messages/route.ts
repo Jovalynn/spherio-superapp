@@ -5,7 +5,7 @@ import { getRioMindOwnerKey, getRioMindPgPool } from "@/lib/riomind/db";
 export const runtime = "nodejs";
 
 type RouteContext = {
-  params: Promise<{ id: string }> | { id: string };
+  params: Promise<{ id: string }>;
 };
 
 const allowedRoles = new Set(["user", "assistant", "system", "tool"]);

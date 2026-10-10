@@ -6,7 +6,7 @@ export const revalidate = 0;
 export const runtime = "nodejs";
 
 type RouteContext = {
-  params: Promise<{ address: string }> | { address: string };
+  params: Promise<{ address: string }>;
 };
 
 let pool: Pool | null = null;

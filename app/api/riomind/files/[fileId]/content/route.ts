@@ -7,7 +7,7 @@ import { getRioMindOwnerKey, getRioMindPgPool } from "@/lib/riomind/db";
 export const runtime = "nodejs";
 
 type RouteContext = {
-  params: Promise<{ fileId: string }> | { fileId: string };
+  params: Promise<{ fileId: string }>;
 };
 
 export async function GET(request: NextRequest, context: RouteContext) {

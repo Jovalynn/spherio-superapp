@@ -5,9 +5,7 @@ import { getRioMindOwnerKey, getRioMindPgPool } from "@/lib/riomind/db";
 export const runtime = "nodejs";
 
 type RouteContext = {
-  params:
-    | Promise<{ id: string; messageId: string }>
-    | { id: string; messageId: string };
+  params: Promise<{ id: string; messageId: string }>;
 };
 
 const allowedRatings = new Set(["like", "dislike"]);

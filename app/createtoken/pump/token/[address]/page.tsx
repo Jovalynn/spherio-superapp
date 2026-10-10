@@ -13,7 +13,7 @@ export const revalidate = 0;
 
 type PageProps = {
   params: Promise<{ address: string }>;
-  searchParams?: Promise<{ created?: string; sim?: string }> | { created?: string; sim?: string };
+  searchParams?: Promise<{ created?: string; sim?: string }>;
 };
 
 function getPumpSimulationInput(sim?: string): PumpLifecycleInput | null {

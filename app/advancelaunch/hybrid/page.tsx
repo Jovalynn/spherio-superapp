@@ -20,7 +20,7 @@ function clsx(...xs: Array<string | false | undefined | null>) {
   return xs.filter(Boolean).join(" ");
 }
 
-export const HYBRID_POLICY = {
+const HYBRID_POLICY = {
   chainId: SPHERIO.chainId,
   feeUrio: "1000000",
   feeRioDisplay: "1.000000",

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 type RouteContext = {
-  params: Promise<{ address: string }> | { address: string };
+  params: Promise<{ address: string }>;
 };
 
 function candidateBases() {
