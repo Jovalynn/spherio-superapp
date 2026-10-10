@@ -147,10 +147,10 @@ export default function RioExplorerHome() {
                 <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">Chain Context</div>
                 <div className="mt-4 space-y-4 text-sm leading-7 text-white/72">
                   <div>
-                    <span className="font-semibold text-white">RIO</span> — native asset of SpherioChain; fixed total supply of <span className="font-semibold text-white">300,000,000</span>, fully minted, validator-bootstrapped network asset.
+                    <span className="font-semibold text-white">RIO</span> — native asset of SpherioChain. Verified supply is unavailable in this overview because live denomination metadata is not established.
                   </div>
                   <div>
-                    <span className="font-semibold text-white">RUSD</span> — stable unit with explorer-auditable reserve, treasury, mint, burn, and attestation evidence.
+                    <span className="font-semibold text-white">RUSD</span> — canonical contract identity and reserve attestations are unverified; monetary evidence is unavailable in this overview.
                   </div>
                 </div>
               </div>
