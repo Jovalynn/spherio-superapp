@@ -112,7 +112,10 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         ok: true,
-        source: "authoritative_curve_engine",
+      previewOnly: true,
+      authoritative: false,
+      executionEnabled: false,
+      source: "caller_configured_curve_simulation",
         treasuryRecipient: feePolicy.feeRecipient,
         state,
         quote: {
@@ -168,7 +171,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      source: "authoritative_curve_engine",
+      previewOnly: true,
+      authoritative: false,
+      executionEnabled: false,
+      source: "caller_configured_curve_simulation",
       treasuryRecipient: feePolicy.feeRecipient,
       state,
       quote: {

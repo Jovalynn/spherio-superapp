@@ -136,7 +136,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      source: "authoritative_participant_authority",
+      previewOnly: true,
+      authoritative: false,
+      executionEnabled: false,
+      source: "caller_configured_curve_simulation",
       participants,
       summary: {
         walletCount: participants.length,

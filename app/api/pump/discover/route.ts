@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
+import { unavailablePumpDiscoveryMeasurements } from "@/lib/pump/price-authority.mjs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -7,8 +8,6 @@ export const runtime = "nodejs";
 
 type DiscoverSort = "trending" | "progress" | "marketCap" | "new";
 
-const RIO_REFERENCE_PRICE_RUSD_ESTIMATE = 0.1;
-const GRADUATION_SEED_TOLERANCE = 0.995;
 
 type PumpDiscoverRequest = {
   sort?: DiscoverSort;
@@ -27,11 +26,11 @@ type PumpBoardRow = {
   baseAsset: "RIO";
   stage: "momentum" | "watch" | "ready" | "graduated";
   stageLabel: string;
-  progressPercent: number;
-  raisedRusdEquivalent: number;
-  impliedMarketCapRusd: number;
-  impliedMarketCapRio: number;
-  effectivePriceRio: number;
+  progressPercent: number | null;
+  raisedRusdEquivalent: number | null;
+  impliedMarketCapRusd: number | null;
+  impliedMarketCapRio: number | null;
+  effectivePriceRio: number | null;
   participantCount: number;
   tradeCount: number;
   buyCount: number;
@@ -40,7 +39,7 @@ type PumpBoardRow = {
   watcherCount: number;
   momentumScore: number;
   earlyFloatPercent: number;
-  volume24hRio: number;
+  volume24hRio: number | null;
   liquidityCommittedRio: number;
   trendDirection: "up" | "flat" | "down";
   createdAtLabel: string;
@@ -55,7 +54,7 @@ type PumpBoardRow = {
   requiredSeedRio?: number | null;
   recordedSeedRio?: number | null;
   actualIndexedSeedRio?: number | null;
-  graduationUnderseeded?: boolean;
+  graduationUnderseeded?: boolean | null;
   graduationDiagnostic?: string | null;
 
   createdHeight?: number | null;
@@ -138,12 +137,6 @@ function isRioLikeSymbol(value: unknown): boolean {
   return s === "RIO" || s === "URIO" || s === "NATIVE:URIO";
 }
 
-function requiredSeedRio(row: any): number {
-  const requiredRusd = toNumber(row.required_seed_value_rusd, 15_000);
-  if (requiredRusd <= 0) return 0;
-  return requiredRusd / RIO_REFERENCE_PRICE_RUSD_ESTIMATE;
-}
-
 function recordedSeedRio(row: any): number {
   return toNumber(row.seed_rio_urio, 0) / 1_000_000;
 }
@@ -161,35 +154,8 @@ function indexedSeedRio(row: any): number {
   return 0;
 }
 
-function graduationUnderseeded(row: any): boolean {
-  const target = requiredSeedRio(row);
-  if (target <= 0) return false;
-
-  const actual = indexedSeedRio(row);
-  const recorded = recordedSeedRio(row);
-  const status = String(row.graduation_status || "").toLowerCase();
-  const hasPair = Boolean(row.riodex_pair_address || row.pair_address);
-
-  if (!hasPair && (status === "pair_created" || status === "completed")) return true;
-
-  const bestAvailableSeed = Math.max(actual, recorded);
-  return bestAvailableSeed > 0 && bestAvailableSeed < target * GRADUATION_SEED_TOLERANCE;
-}
-
-function graduationDiagnostic(row: any): string | null {
-  if (!graduationUnderseeded(row)) return null;
-
-  const target = requiredSeedRio(row);
-  const actual = indexedSeedRio(row);
-  const recorded = recordedSeedRio(row);
-
-  return `Required ${target.toLocaleString("en-US", {
-    maximumFractionDigits: 2,
-  })} RIO for 15K RUSD target at 0.1 RUSD/RIO; indexed ${actual.toLocaleString("en-US", {
-    maximumFractionDigits: 6,
-  })} RIO; recorded ${recorded.toLocaleString("en-US", {
-    maximumFractionDigits: 6,
-  })} RIO.`;
+function graduationDiagnostic(_row: any): string {
+  return "Seed valuation is unavailable until an approved canonical RIO/RUSD source is configured.";
 }
 
 function createdAtLabelFromHeight(height: unknown): string {
@@ -202,7 +168,6 @@ function mapStage(row: any): PumpBoardRow["stage"] {
   const tokenStatus = String(row.token_status || "").toLowerCase();
   const graduationStatus = String(row.graduation_status || "").toLowerCase();
 
-  if (graduationUnderseeded(row)) return "ready";
   if (tokenStatus === "graduated" || graduationStatus === "completed") return "graduated";
   if (tokenStatus === "graduating" || graduationStatus === "pair_created") return "ready";
   if (toNumber(row.real_rio_reserve_urio, 0) > 0) return "watch";
@@ -212,7 +177,6 @@ function mapStage(row: any): PumpBoardRow["stage"] {
 function stageLabel(stage: PumpBoardRow["stage"], row: any): string {
   const graduationStatus = String(row.graduation_status || "").toLowerCase();
 
-  if (graduationUnderseeded(row)) return "Graduated · LP underseeded";
   if (stage === "graduated") return "Graduated · RioDex Live";
   if (graduationStatus === "pair_created") return "Pair Created · Needs Finalization";
   if (stage === "ready") return "Graduation Watch";
@@ -220,86 +184,21 @@ function stageLabel(stage: PumpBoardRow["stage"], row: any): string {
   return "Momentum";
 }
 
-const PUMP_BASELINE_MARKET_CAP_RIO = 0;
-
-function targetMarketCapRio(row: any): number {
-  return toNumber(row.target_market_cap_rusd, 65_000);
-}
-
-function progressFor(stage: PumpBoardRow["stage"], row: any, marketCapRio = 0): number {
-  const indexedProgress = toNumber(row.progress_percent, -1);
-
-  if (indexedProgress >= 0 && stage !== "graduated") {
-    return Math.max(0, Math.min(indexedProgress, 100));
-  }
-
-  if (graduationUnderseeded(row)) return 96;
-  if (stage === "graduated") return 100;
-
-  const graduationStatus = String(row.graduation_status || "").toLowerCase();
-  if (graduationStatus === "pair_created") return 92;
-  if (stage === "ready") return 88;
-
-  const target = targetMarketCapRio(row);
-  if (target <= 0) return 0;
-
-  const effectiveMarketCap = marketCapRio > 0 ? marketCapRio : 0;
-  return Math.max(0, Math.min((effectiveMarketCap / target) * 100, 100));
-}
-
 function buildRows(dbRows: any[], totalSupply: number): PumpBoardRow[] {
   const rows = dbRows.map((row, index) => {
     const stage = mapStage(row);
 
     const realRioReserve = toNumber(row.real_rio_reserve_urio, 0) / 1_000_000;
-    const realTokenReserve = toNumber(row.real_token_reserve_base, 0) / 1_000_000;
-    const virtualRioReserve = toNumber(row.virtual_rio_reserve_urio, 0) / 1_000_000;
-    const virtualTokenReserve = toNumber(row.virtual_token_reserve_base, 0) / 1_000_000;
-
-    const hasRealCurveMovement = realRioReserve > 0;
-
-    const effectiveRioReserve = hasRealCurveMovement
-      ? realRioReserve + virtualRioReserve
-      : 0;
-
-    const effectiveTokenReserve = hasRealCurveMovement
-      ? realTokenReserve + virtualTokenReserve
-      : 0;
-
-    const effectivePriceRio =
-      effectiveTokenReserve > 0 && effectiveRioReserve > 0
-        ? effectiveRioReserve / effectiveTokenReserve
-        : 0;
-
-    const curveMarketCapRio =
-      hasRealCurveMovement && effectivePriceRio > 0 ? effectivePriceRio * totalSupply : 0;
-
-    const indexedMarketCapRusd = toNumber(row.implied_market_cap_rusd, 0);
-    const indexedMarketCapRio =
-      indexedMarketCapRusd > 0
-        ? indexedMarketCapRusd / RIO_REFERENCE_PRICE_RUSD_ESTIMATE
-        : 0;
-
-    const impliedMarketCapRio =
-      indexedMarketCapRio > 0
-        ? indexedMarketCapRio
-        : curveMarketCapRio;
-
-    const progressPercent = progressFor(stage, row, impliedMarketCapRio);
-
     const hasPair = Boolean(row.riodex_pair_address || row.pair_address);
     const hasLiquidity = row.reserve_0 !== null && row.reserve_1 !== null;
     const reserves = reserveLabel(row);
 
     const requiredSeedValueRusd = toNumber(row.required_seed_value_rusd, 15_000);
-    const requiredSeedRioValue = requiredSeedRio(row);
     const recordedSeedRioValue = recordedSeedRio(row);
     const actualIndexedSeedRioValue = indexedSeedRio(row);
-    const isUnderseeded = graduationUnderseeded(row);
     const diagnostic = graduationDiagnostic(row);
 
     const score =
-      progressPercent * 0.7 +
       (hasPair ? 12 : 0) +
       (hasLiquidity ? 12 : 0) +
       Math.min(realRioReserve, 10);
@@ -318,11 +217,7 @@ function buildRows(dbRows: any[], totalSupply: number): PumpBoardRow[] {
       baseAsset: "RIO" as const,
       stage,
       stageLabel: stageLabel(stage, row),
-      progressPercent,
-      raisedRusdEquivalent: toNumber(row.raised_rusd_equivalent, 0),
-      impliedMarketCapRusd: toNumber(row.implied_market_cap_rusd, 0),
-      impliedMarketCapRio,
-      effectivePriceRio: toNumber(row.implied_price_rio, effectivePriceRio),
+      ...unavailablePumpDiscoveryMeasurements(row),
       participantCount: toNumber(row.unique_buyers, 0),
       tradeCount: toNumber(row.trade_count, 0),
       buyCount: toNumber(row.buy_count, 0),
@@ -331,7 +226,6 @@ function buildRows(dbRows: any[], totalSupply: number): PumpBoardRow[] {
       watcherCount: 0,
       momentumScore: Math.round(score),
       earlyFloatPercent: 0,
-      volume24hRio: toNumber(row.raised_rusd_equivalent, 0) / RIO_REFERENCE_PRICE_RUSD_ESTIMATE,
       liquidityCommittedRio: realRioReserve,
       trendDirection,
       createdAtLabel: createdAtLabelFromHeight(row.created_height),
@@ -339,9 +233,7 @@ function buildRows(dbRows: any[], totalSupply: number): PumpBoardRow[] {
 
       pairAddress,
       reserveLabel: reserves,
-      liquidityStatus: isUnderseeded
-        ? "underseeded"
-        : hasLiquidity
+      liquidityStatus: hasLiquidity
           ? "reserves_indexed"
           : hasPair
             ? "pair_created"
@@ -349,10 +241,8 @@ function buildRows(dbRows: any[], totalSupply: number): PumpBoardRow[] {
       graduationStatus: row.graduation_status || row.token_status || null,
 
       requiredSeedValueRusd,
-      requiredSeedRio: requiredSeedRioValue,
       recordedSeedRio: recordedSeedRioValue,
       actualIndexedSeedRio: actualIndexedSeedRioValue,
-      graduationUnderseeded: isUnderseeded,
       graduationDiagnostic: diagnostic,
 
       createdHeight: row.created_height ? Number(row.created_height) : null,
@@ -372,9 +262,9 @@ function sortRows(rows: PumpBoardRow[], sort: DiscoverSort): PumpBoardRow[] {
   const next = [...rows];
 
   if (sort === "progress") {
-    next.sort((a, b) => b.progressPercent - a.progressPercent);
+    next.sort((a, b) => (b.progressPercent ?? -1) - (a.progressPercent ?? -1));
   } else if (sort === "marketCap") {
-    next.sort((a, b) => b.impliedMarketCapRio - a.impliedMarketCapRio);
+    next.sort((a, b) => (b.impliedMarketCapRio ?? -1) - (a.impliedMarketCapRio ?? -1));
   } else if (sort === "new") {
     next.sort((a, b) => (b.createdHeight ?? 0) - (a.createdHeight ?? 0));
   } else {

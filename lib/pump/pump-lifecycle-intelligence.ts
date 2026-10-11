@@ -1,3 +1,4 @@
+import { pumpMonetaryMeasurements } from "./price-authority.mjs";
 // lib/pump/pump-lifecycle-intelligence.ts
 
 export type PumpLifecyclePhase =
@@ -116,6 +117,7 @@ export type PumpLifecycleInput = {
 };
 
 export type PumpLifecycleResult = {
+  valuationAvailable: boolean;
   phase: PumpLifecyclePhase;
   stage: PumpLifecycleStage;
   title: string;
@@ -129,9 +131,9 @@ export type PumpLifecycleResult = {
       | "active_trading"
       | "graduation_threshold_reached";
     progressPercent: number;
-    raisedStableEquivalent: number;
+    raisedStableEquivalent: number | null;
     graduationTargetStableEquivalent: number;
-    remainingToGraduationStableEquivalent: number;
+    remainingToGraduationStableEquivalent: number | null;
     tradeCount: number;
     buyCount: number;
     sellCount: number;
@@ -143,16 +145,16 @@ export type PumpLifecycleResult = {
   graduation: {
     pending: boolean;
     liquiditySeeded: boolean;
-    liquiditySeedStableEquivalent: number;
+    liquiditySeedStableEquivalent: number | null;
     lpBurnedOrDeadWalleted: boolean;
     explanation: string;
   };
 
   rewards: {
-    rewardPoolBaseStableEquivalent: number;
-    remainingAfterSeedStableEquivalent: number;
-    creatorRewardReserveStableEquivalent: number;
-    ecosystemDevelopmentReserveStableEquivalent: number;
+    rewardPoolBaseStableEquivalent: number | null;
+    remainingAfterSeedStableEquivalent: number | null;
+    creatorRewardReserveStableEquivalent: number | null;
+    ecosystemDevelopmentReserveStableEquivalent: number | null;
     totalConfiguredRewardPercent: number;
     stages: PumpRewardStage[];
     explanation: string;
@@ -479,6 +481,7 @@ function getBondingCurveTradingStatus(input: PumpLifecycleInput):
 export function getPumpLifecycleIntelligence(
   input: PumpLifecycleInput = {},
 ): PumpLifecycleResult {
+  input = { ...input, ...pumpMonetaryMeasurements(input) };
   const stage = determineStage(input);
   const phase = determinePhase(stage);
 
@@ -628,6 +631,7 @@ export function getPumpLifecycleIntelligence(
             };
 
   return {
+    valuationAvailable: false,
     phase,
     stage,
     title: titleByStage[stage],
@@ -638,9 +642,9 @@ export function getPumpLifecycleIntelligence(
       live: Boolean(input.bondingCurveLive),
       tradingStatus: getBondingCurveTradingStatus(input),
       progressPercent: clamp(num(input.bondingCurveProgressPercent)),
-      raisedStableEquivalent: raised,
+      raisedStableEquivalent: null,
       graduationTargetStableEquivalent: graduationTarget,
-      remainingToGraduationStableEquivalent: remainingToGraduation,
+      remainingToGraduationStableEquivalent: null,
       tradeCount: Math.max(0, Math.round(num(input.tradeCount))),
       buyCount: Math.max(0, Math.round(num(input.buyCount))),
       sellCount: Math.max(0, Math.round(num(input.sellCount))),
@@ -655,17 +659,17 @@ export function getPumpLifecycleIntelligence(
         stage === "graduation_pending" ||
         stage === "bonding_curve_threshold_reached",
       liquiditySeeded: Boolean(input.liquiditySeeded),
-      liquiditySeedStableEquivalent: seed,
+      liquiditySeedStableEquivalent: null,
       lpBurnedOrDeadWalleted: Boolean(input.lpBurnedOrDeadWalleted),
       explanation:
         "Graduation uses protocol-seeded liquidity, then requires LP burn/dead-wallet proof before market integrity is complete.",
     },
 
     rewards: {
-      rewardPoolBaseStableEquivalent: remainingAfterSeed,
-      remainingAfterSeedStableEquivalent: remainingAfterSeed,
-      creatorRewardReserveStableEquivalent: creatorRewardReserve,
-      ecosystemDevelopmentReserveStableEquivalent: ecosystemDevelopmentReserve,
+      rewardPoolBaseStableEquivalent: null,
+      remainingAfterSeedStableEquivalent: null,
+      creatorRewardReserveStableEquivalent: null,
+      ecosystemDevelopmentReserveStableEquivalent: null,
       totalConfiguredRewardPercent,
       stages: rewards,
       explanation:

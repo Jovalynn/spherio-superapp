@@ -236,6 +236,7 @@ function getPumpSimulationInput(sim?: string): PumpLifecycleInput | null {
 }
 
 function formatUsd(value?: number | null) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "Unavailable";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",

@@ -121,20 +121,6 @@ function mapPumpPosition(row: PumpPositionRow) {
   const hasRealCurveMovement = realRioReserve > 0;
   const effectiveRioReserve = hasRealCurveMovement ? realRioReserve + virtualRioReserve : 0;
   const effectiveTokenReserve = hasRealCurveMovement ? realTokenReserve + virtualTokenReserve : 0;
-  const effectivePriceRio =
-    effectiveRioReserve > 0 && effectiveTokenReserve > 0
-      ? effectiveRioReserve / effectiveTokenReserve
-      : 0;
-
-  const marketCapRio =
-    effectivePriceRio > 0 ? effectivePriceRio * 1_000_000_000 : 3000;
-
-  const targetMarketCapRio = toNumber(row.target_market_cap_rusd, 65_000);
-  const progressPercent =
-    targetMarketCapRio > 0
-      ? Math.max(0, Math.min((marketCapRio / targetMarketCapRio) * 100, 100))
-      : 0;
-
   return {
     kind: "pump",
     tokenAddress: row.token_address,
@@ -151,9 +137,11 @@ function mapPumpPosition(row: PumpPositionRow) {
     tradeCount: Number(row.trade_count || 0),
     lastTradeAt: row.last_trade_at,
     curve: {
-      effectivePriceRio,
-      marketCapRio: compact(marketCapRio, 6),
-      progressPercent: compact(progressPercent, 4),
+      effectivePriceRio: null,
+      marketCapRio: null,
+      progressPercent: null,
+      valuationAvailable: false,
+      valuationSource: null,
       realRioReserve: compact(realRioReserve, 6),
       virtualRioReserve: compact(virtualRioReserve, 6),
     },

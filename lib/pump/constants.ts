@@ -41,14 +41,8 @@ export const PUMP_REWARD_ALLOW_INSTANT_POST_GRADUATION_PAYOUT = false;
 // Stage-specific sustain windows should prefer the explicit constants above.
 export const PUMP_REWARD_SUSTAIN_DAYS = PUMP_REWARD_STAGE_TWO_SUSTAIN_DAYS;
 
-// Dev/reference conversion. Later this should come from RIO/RUSD TWAP.
-export const PUMP_RIO_REFERENCE_PRICE_RUSD = 0.1;
-
-export const PUMP_GRADUATION_TARGET_RIO =
-  PUMP_GRADUATION_TARGET_RUSD / PUMP_RIO_REFERENCE_PRICE_RUSD;
-
-export const PUMP_GRADUATION_TARGET_URIO =
-  Math.round(PUMP_GRADUATION_TARGET_RIO * 1_000_000);
+// RIO seed quantities require an approved canonical RIO/RUSD price.
+// No fixed reference conversion is exported as execution authority.
 
 export const PUMP_GRADUATION_REMAINING_AFTER_SEED_RUSD =
   PUMP_GRADUATION_TARGET_RUSD - PUMP_GRADUATION_SEED_RUSD;

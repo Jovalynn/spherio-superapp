@@ -1,11 +1,10 @@
 // lib/pump/pump-lifecycle-data.ts
 
 import { Pool } from "pg";
+import { pumpMonetaryMeasurements } from "@/lib/pump/price-authority.mjs";
 import type { PumpLifecycleInput } from "@/lib/pump/pump-lifecycle-intelligence";
 
 const URIO_PER_RIO = 1_000_000;
-const DEFAULT_RIO_REFERENCE_PRICE_RUSD = 0.1;
-const DEFAULT_GRADUATION_SEED_STABLE_EQUIVALENT = 15_000;
 
 let pool: Pool | null = null;
 
@@ -60,56 +59,6 @@ function indexedRioReserve(row: any): number {
   if (isRioNative(row.asset_1_type, row.asset_1_id)) {
     return urioToRio(row.reserve_1);
   }
-
-  return 0;
-}
-
-function inferProgressPercent(row: any): number {
-  const explicitProgress = toNumber(row?.progress_percent, -1);
-  if (explicitProgress >= 0) {
-    return Math.max(0, Math.min(explicitProgress, 100));
-  }
-
-  const tokenStatus = status(row?.token_status);
-  const graduationStatus = status(row?.graduation_status);
-
-  if (tokenStatus === "graduated" || graduationStatus === "completed") return 100;
-  if (graduationStatus === "pair_created") return 92;
-  if (tokenStatus === "graduating") return 88;
-
-  const realRioReserve = urioToRio(row?.real_rio_reserve_urio);
-  const targetMarketCapRusd = toNumber(row?.target_market_cap_rusd, 65_000);
-  const impliedMarketCapRusd =
-    realRioReserve > 0 ? realRioReserve * DEFAULT_RIO_REFERENCE_PRICE_RUSD : 0;
-
-  if (targetMarketCapRusd <= 0) return 0;
-
-  return Math.max(0, Math.min((impliedMarketCapRusd / targetMarketCapRusd) * 100, 100));
-}
-
-function inferRaisedStableEquivalent(row: any): number {
-  const explicitRaised = toNumber(row?.raised_rusd_equivalent, -1);
-  if (explicitRaised >= 0) return explicitRaised;
-
-  const realRioReserve = urioToRio(row?.real_rio_reserve_urio);
-  return realRioReserve * DEFAULT_RIO_REFERENCE_PRICE_RUSD;
-}
-
-function inferMarketCapUsd(row: any): number {
-  const explicitMarketCap = toNumber(row?.implied_market_cap_rusd, -1);
-  if (explicitMarketCap >= 0) return explicitMarketCap;
-
-  const progress = inferProgressPercent(row);
-  const target = toNumber(row?.target_market_cap_rusd, 65_000);
-  return (progress / 100) * target;
-}
-
-function inferLiquidityUsd(row: any): number {
-  const rioReserve = indexedRioReserve(row);
-  if (rioReserve > 0) return rioReserve * DEFAULT_RIO_REFERENCE_PRICE_RUSD * 2;
-
-  const seedRio = urioToRio(row?.seed_rio_urio);
-  if (seedRio > 0) return seedRio * DEFAULT_RIO_REFERENCE_PRICE_RUSD * 2;
 
   return 0;
 }
@@ -197,9 +146,7 @@ export async function getPumpLifecycleInputForToken(
           tokenSymbol: "PUMP",
           stage: "draft",
           bondingCurveLive: false,
-          bondingCurveProgressPercent: 0,
-          bondingCurveRaisedStableEquivalent: 0,
-          liquiditySeedStableEquivalent: DEFAULT_GRADUATION_SEED_STABLE_EQUIVALENT,
+          ...pumpMonetaryMeasurements(null),
           indexerReady: false,
         },
       };
@@ -306,24 +253,13 @@ export async function getPumpLifecycleInputForToken(
         stage === "graduated_liquidity_seeded" ||
         stage === "market_live",
 
-      bondingCurveProgressPercent: inferProgressPercent(row),
-      bondingCurveRaisedStableEquivalent: inferRaisedStableEquivalent(row),
-      graduationThresholdReached:
-        stage === "graduation_pending" ||
-        stage === "graduated_liquidity_seeded" ||
-        stage === "market_live",
+      ...pumpMonetaryMeasurements(row),
 
       liquiditySeeded,
-      liquiditySeedStableEquivalent: toNumber(
-        row.required_seed_value_rusd,
-        DEFAULT_GRADUATION_SEED_STABLE_EQUIVALENT,
-      ),
       lpBurnedOrDeadWalleted: false,
 
-      marketCapUsd: inferMarketCapUsd(row),
       marketCapSustainDays250k: 0,
       marketCapSustainDays500k: 0,
-      liquidityUsd: inferLiquidityUsd(row),
 
       // These are not yet fully indexed into this page.
       // Keep them conservative until dedicated analytics tables/routes are wired.
@@ -363,9 +299,7 @@ export async function getPumpLifecycleInputForToken(
         tokenSymbol: "PUMP",
         stage: "draft",
         bondingCurveLive: false,
-        bondingCurveProgressPercent: 0,
-        bondingCurveRaisedStableEquivalent: 0,
-        liquiditySeedStableEquivalent: DEFAULT_GRADUATION_SEED_STABLE_EQUIVALENT,
+        ...pumpMonetaryMeasurements(null),
         indexerReady: false,
       },
     };

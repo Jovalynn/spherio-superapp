@@ -386,7 +386,7 @@ function toPumpBaseUnits(value: string, decimals = 6): bigint {
 }
 
 function compactMoney(value: number) {
-  if (!Number.isFinite(value)) return "0.00";
+  if (!Number.isFinite(value)) return "Unavailable";
   if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
@@ -394,7 +394,8 @@ function compactMoney(value: number) {
 }
 
 function formatCurvePrice(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "0";
+  if (!Number.isFinite(value)) return "Unavailable";
+  if (value <= 0) return "0";
 
   if (value < 0.000001) return value.toExponential(4);
   if (value < 0.01) return value.toFixed(8);
@@ -518,34 +519,6 @@ function mapAuthorityTrendToDirection(trend: LaunchCardTrend): "up" | "flat" | "
   if (trend === "hot") return "up";
   if (trend === "ready") return "up";
   return "flat";
-}
-
-function mapAuthorityCardToBoardRow(card: LaunchCardState, rank = 1): PumpBoardRow {
-  const stage = card.trend === "ready" ? "ready" : card.trend === "hot" ? "watch" : "momentum";
-
-  return {
-    rank,
-    tokenAddress: card.tokenAddress,
-    tokenName: card.tokenName,
-    symbol: card.symbol,
-    launchRail: "pump.live",
-    standard: "SPO-20",
-    baseAsset: "RIO",
-    stage,
-    stageLabel: stage === "ready" ? "Graduation Watch" : stage === "watch" ? "Building Demand" : "Momentum",
-    progressPercent: card.progressPercent,
-    impliedMarketCapRio: card.marketCapUsd,
-    effectivePriceRio: Math.max(card.marketCapUsd / 1_000_000_000, 0.000001),
-    participantCount: 120,
-    watcherCount: 80,
-    momentumScore: card.trend === "hot" ? 82 : card.trend === "ready" ? 76 : 58,
-    earlyFloatPercent: 1.25,
-    volume24hRio: Math.max(card.marketCapUsd * 0.08, 100),
-    liquidityCommittedRio: Math.max(card.marketCapUsd * 0.03, 75),
-    trendDirection: mapAuthorityTrendToDirection(card.trend),
-    createdAtLabel: card.ageLabel,
-    score: card.progressPercent,
-  };
 }
 
 function resolvePumpMarketLabels(row: PumpBoardRow | null, selectedChart: PumpChartRangeState | undefined, hasRealDiscoveryRows: boolean) {
@@ -1046,13 +1019,13 @@ export default function PumpBoardPage() {
 
     if (selected) return selected;
     if (rows.length) return rows[0];
-    if (surfaceState?.apexLeader) return mapAuthorityCardToBoardRow(surfaceState.apexLeader, 1);
+
     return null;
   }, [rows, selectedTokenParam, surfaceState]);
 
   const rankedRows = useMemo(() => {
     if (rows.length) return dedupePumpBoardRows(rows);
-    if (surfaceState?.apexLeader) return [mapAuthorityCardToBoardRow(surfaceState.apexLeader, 1)];
+
     return [];
   }, [rows, surfaceState]);
 
@@ -2194,14 +2167,14 @@ export default function PumpBoardPage() {
                                   <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0a0f1c] px-4 py-3"><input className="min-w-0 flex-1 bg-transparent text-lg text-white outline-none placeholder:text-slate-500" value={buyRioIn} onChange={(e) => setBuyRioIn(e.target.value)} placeholder="0.0" /><span className="text-sm font-semibold text-white/80">RIO</span></div>
                                   <div className="flex flex-wrap gap-2"><button type="button" onClick={() => setBuyRioIn("0.1")} className={actionButton(false)}>0.1 RIO</button><button type="button" onClick={() => setBuyRioIn("0.5")} className={actionButton(false)}>0.5 RIO</button><button type="button" onClick={() => setBuyRioIn("1")} className={actionButton(false)}>1 RIO</button><button type="button" onClick={() => setBuyRioIn("5")} className={actionButton(false)}>Max</button></div>
                                   <div className="rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-sm text-white/72">{isLoadingQuote ? "Loading quote..." : buyQuote ? `Est. ${formatNumber(Math.round(buyQuote.estimatedAmountOut))} ${buyQuote.estimatedAmountOutDenom}` : "Enter amount"}</div>
-                                  {buyQuote ? <div className="text-xs text-white/50">Fee {buyQuote.feeAmount} {buyQuote.feeDenom} · Price {buyQuote.effectivePriceRio} RIO</div> : null}
+                                  {buyQuote ? <div className="text-xs text-white/50">Fee {buyQuote.feeAmount} {buyQuote.feeDenom} · Preview price {buyQuote.effectivePriceRio} RIO</div> : null}
                                   <button type="button" onClick={() => executePumpTrade("buy")} disabled={isExecutingTrade} className="w-full rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:opacity-50">{isExecutingTrade ? "Buying..." : "Buy"}</button>
                                 </div>
                               ) : (
                                 <div className="mt-4 space-y-3">
                                   <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0a0f1c] px-4 py-3"><input className="min-w-0 flex-1 bg-transparent text-lg text-white outline-none placeholder:text-slate-500" value={sellTokenIn} onChange={(e) => setSellTokenIn(e.target.value)} placeholder="0.0" /><span className="text-sm font-semibold text-white/80">{leader.symbol}</span></div>
                                   <div className="rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-sm text-white/72">{isLoadingQuote ? "Loading quote..." : sellQuote ? `Est. ${sellQuote.estimatedAmountOut.toFixed(2)} ${sellQuote.estimatedAmountOutDenom}` : "Enter amount"}</div>
-                                  {sellQuote ? <div className="text-xs text-white/50">Fee {sellQuote.feeAmount} {sellQuote.feeDenom} · Price {sellQuote.effectivePriceRio} RIO</div> : null}
+                                  {sellQuote ? <div className="text-xs text-white/50">Fee {sellQuote.feeAmount} {sellQuote.feeDenom} · Preview price {sellQuote.effectivePriceRio} RIO</div> : null}
                                   <button type="button" onClick={() => executePumpTrade("sell")} disabled={isExecutingTrade} className="w-full rounded-2xl bg-amber-400 px-4 py-3 text-sm font-semibold text-slate-950 disabled:opacity-50">{isExecutingTrade ? "Selling..." : "Sell"}</button>
                                 </div>
                               )}
