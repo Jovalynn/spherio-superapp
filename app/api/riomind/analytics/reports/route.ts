@@ -81,20 +81,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 50), 1), 100);
 
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS riomind_analytics_reports (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        owner_key TEXT NOT NULL,
-        session_id UUID NOT NULL,
-        title TEXT NOT NULL,
-        report_type TEXT NOT NULL DEFAULT 'executive',
-        status TEXT NOT NULL DEFAULT 'generated',
-        content TEXT NOT NULL,
-        artifact_name TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
+    await db.query(`SELECT * FROM riomind_analytics_reports LIMIT 0`);
 
     const result = await db.query(
       `
@@ -140,20 +127,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS riomind_analytics_reports (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        owner_key TEXT NOT NULL,
-        session_id UUID NOT NULL,
-        title TEXT NOT NULL,
-        report_type TEXT NOT NULL DEFAULT 'executive',
-        status TEXT NOT NULL DEFAULT 'generated',
-        content TEXT NOT NULL,
-        artifact_name TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
+    await db.query(`SELECT * FROM riomind_analytics_reports LIMIT 0`);
 
     const sessionResult = await db.query(
       `

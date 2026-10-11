@@ -4,29 +4,9 @@ export async function ensureRioMindKnowledgeProvenanceSchema() {
   await ensureRioMindAiFoundationSchema();
   const db = getRioMindAiFoundationPool();
 
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS riomind_knowledge_provenance (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      ai_layer text NOT NULL DEFAULT 'nexus_ai',
-      source_type text NOT NULL,
-      source_id text NOT NULL,
-      source_title text,
-      source_version integer,
-      source_hash text,
-      knowledge_kind text NOT NULL,
-      knowledge_text text NOT NULL,
-      node_key text,
-      confidence numeric NOT NULL DEFAULT 0.78,
-      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      UNIQUE(ai_layer, source_type, source_id, source_version, knowledge_kind, knowledge_text)
-    )
-  `);
+  await db.query(`SELECT * FROM riomind_knowledge_provenance LIMIT 0`);
 
-  await db.query(`
-    CREATE INDEX IF NOT EXISTS idx_riomind_knowledge_provenance_source
-    ON riomind_knowledge_provenance(ai_layer, source_type, source_id, source_version)
-  `);
+  await db.query(`SELECT * FROM riomind_knowledge_provenance LIMIT 0`);
 }
 
 export async function recordRioMindKnowledgeProvenance(input: {

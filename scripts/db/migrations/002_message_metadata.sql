@@ -1,0 +1,3 @@
+BEGIN;
+ALTER TABLE riomind_messages ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+COMMIT;

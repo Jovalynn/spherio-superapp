@@ -14,7 +14,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const db = getRioMindPgPool();
 
     await db.query(
-      "ALTER TABLE riomind_messages ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb"
+      "SELECT metadata FROM riomind_messages LIMIT 0"
     );
     const ownerKey = getRioMindOwnerKey(request.headers);
 

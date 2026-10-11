@@ -26,11 +26,7 @@ export async function PATCH(
 
     const pool = getRioMindPgPool();
 
-    await pool.query(`
-      ALTER TABLE riomind_analytics_sessions
-      ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ,
-      ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ
-    `);
+    await pool.query(`SELECT archived_at, completed_at FROM riomind_analytics_sessions LIMIT 0`);
 
     const result = await pool.query(
       `

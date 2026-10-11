@@ -1,6 +1,4 @@
 import { Pool } from "pg";
-import fs from "fs";
-import path from "path";
 
 let pool: Pool | null = null;
 let schemaReady = false;
@@ -31,8 +29,24 @@ export function getRioMindAiFoundationPool() {
 export async function ensureRioMindAiFoundationSchema() {
   if (schemaReady) return;
 
-  const schemaPath = path.join(process.cwd(), "lib/riomind/ai-foundation/schema.sql");
-  const sql = fs.readFileSync(schemaPath, "utf8");
-  await getRioMindAiFoundationPool().query(sql);
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_agent_runs LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_agent_steps LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_document_chunks LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_documents LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_embeddings LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_evaluations LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_guardrail_events LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_kg_edges LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_kg_nodes LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_memory LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_reasoning_logs LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_retrieval_sessions LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_tool_calls LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_tools LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_voice_events LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_voice_sessions LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_voice_transcripts LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_workflow_runs LIMIT 0");
+  await getRioMindAiFoundationPool().query("SELECT * FROM riomind_workflows LIMIT 0");
   schemaReady = true;
 }
