@@ -1,13 +1,17 @@
+import { getRioMindOwnerKey } from "@/lib/riomind/db";
+import { requireTeamAccess, TeamAuthorizationError } from "@/lib/riomind/teams/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import { getReadyRioMindTeamsPool } from "@/lib/riomind/teams/db";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ teamId: string }> }
 ) {
   try {
     const { teamId } = await params;
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, false, false);
 
     const teamResult = await pool.query(
       `SELECT * FROM riomind_teams WHERE id = $1`,
@@ -53,7 +57,7 @@ export async function GET(
     console.error("GET /api/riomind/teams/[teamId] failed", error);
     return NextResponse.json(
       { ok: false, error: error?.message || "Failed to load team" },
-      { status: 500 }
+      { status: error instanceof TeamAuthorizationError ? 403 : 500 }
     );
   }
 }
@@ -66,6 +70,8 @@ export async function PATCH(
     const { teamId } = await params;
     const body = await req.json().catch(() => ({}));
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, true, true);
 
     const result = await pool.query(
       `
@@ -108,7 +114,7 @@ export async function PATCH(
     console.error("PATCH /api/riomind/teams/[teamId] failed", error);
     return NextResponse.json(
       { ok: false, error: error?.message || "Failed to update team" },
-      { status: 500 }
+      { status: error instanceof TeamAuthorizationError ? 403 : 500 }
     );
   }
 }

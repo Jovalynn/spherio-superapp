@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const ownerKey = getRioMindOwnerKey(req.headers);
+    const ownerKey = await getRioMindOwnerKey(req.headers);
 
     const artifact = await createDocxArtifact({
       ownerKey,

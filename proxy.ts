@@ -1,3 +1,5 @@
+import { requiresRioMindOperator, isRioMindOperator } from "./lib/riomind/unscoped-api-access";
+import { getVerifiedOwnerKey } from "./lib/riomind/owner-auth";
 import { NextRequest, NextResponse } from "next/server";
 
 const RIOLIGHT_HOSTS = new Set([
@@ -30,9 +32,17 @@ function isAssetOrApiPath(pathname: string) {
   );
 }
 
-export function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const host = cleanHost(request.headers.get("host"));
   const pathname = request.nextUrl.pathname;
+
+  if (pathname === "/api/riomind" || pathname.startsWith("/api/riomind/")) {
+    try {
+      const subject = await getVerifiedOwnerKey(request.headers);
+      if (requiresRioMindOperator(pathname) && !isRioMindOperator(subject)) return NextResponse.json({ok:false,error:"Operator access required"}, {status:403});
+    }
+    catch { return NextResponse.json({ ok: false, error: "Authenticated identity required" }, { status: 401 }); }
+  }
 
   if (isAssetOrApiPath(pathname)) {
     return NextResponse.next();

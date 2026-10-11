@@ -12,7 +12,7 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const { id } = await context.params;
     const body = await request.json().catch(() => ({}));
     const status = String(body?.status || "").trim().toLowerCase();

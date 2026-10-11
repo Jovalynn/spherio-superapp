@@ -25,7 +25,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const { id } = await context.params;
     const db = getRioMindPgPool();
 

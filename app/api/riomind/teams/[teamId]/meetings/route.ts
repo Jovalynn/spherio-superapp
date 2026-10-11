@@ -1,3 +1,5 @@
+import { getRioMindOwnerKey } from "@/lib/riomind/db";
+import { requireTeamAccess, TeamAuthorizationError } from "@/lib/riomind/teams/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import { getReadyRioMindTeamsPool } from "@/lib/riomind/teams/db";
 import { meetingEngine } from "@/lib/riomind/meetings/engine";
@@ -37,12 +39,14 @@ function accessPolicyFromBody(
 }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ teamId: string }> }
 ) {
   try {
     const { teamId } = await params;
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, false, false);
 
     const result = await pool.query(
       `SELECT
@@ -71,7 +75,7 @@ export async function GET(
         ok: false,
         error: error?.message || "Failed to list meetings",
       },
-      { status: 500 }
+      { status: error instanceof TeamAuthorizationError ? 403 : 500 }
     );
   }
 }
@@ -84,6 +88,8 @@ export async function POST(
     const { teamId } = await params;
     const body = await req.json().catch(() => ({}));
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, true, false);
 
     const title = String(body.title || "").trim();
 
@@ -132,12 +138,7 @@ export async function POST(
       body.accessPolicy || body.access_policy
     );
 
-    const ownerUserId = String(
-      body.ownerUserId ||
-      body.owner_user_id ||
-      teamResult.rows[0]?.owner_user_id ||
-      "local-user"
-    );
+    const ownerUserId = authenticatedSubject;
 
     const ownerDisplayName = String(
       body.ownerDisplayName ||
@@ -294,7 +295,7 @@ export async function POST(
         ok: false,
         error: error?.message || "Failed to create meeting",
       },
-      { status: 500 }
+      { status: error instanceof TeamAuthorizationError ? 403 : 500 }
     );
   }
 }

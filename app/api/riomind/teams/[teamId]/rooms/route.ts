@@ -1,22 +1,26 @@
+import { getRioMindOwnerKey } from "@/lib/riomind/db";
+import { requireTeamAccess, TeamAuthorizationError } from "@/lib/riomind/teams/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import { getReadyRioMindTeamsPool } from "@/lib/riomind/teams/db";
 
 const ROOM_TYPES = new Set(["team", "meeting", "voice", "project", "analytics", "artifact"]);
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ teamId: string }> }
 ) {
   try {
     const { teamId } = await params;
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, false, false);
     const result = await pool.query(
       `SELECT * FROM riomind_team_rooms WHERE team_id = $1 ORDER BY created_at ASC`,
       [teamId]
     );
     return NextResponse.json({ ok: true, rooms: result.rows });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error?.message || "Failed to list rooms" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error?.message || "Failed to list rooms" }, { status: error instanceof TeamAuthorizationError ? 403 : 500 });
   }
 }
 
@@ -28,6 +32,8 @@ export async function POST(
     const { teamId } = await params;
     const body = await req.json().catch(() => ({}));
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, true, false);
 
     const name = String(body.name || "").trim();
     if (!name) {
@@ -68,13 +74,13 @@ export async function POST(
         Boolean(body.whiteboardEnabled ?? true),
         Boolean(body.sharedChatEnabled ?? true),
         Boolean(body.sharedNotesEnabled ?? true),
-        body.createdBy || "local-user",
+        authenticatedSubject,
         body.metadata || {},
       ]
     );
 
     return NextResponse.json({ ok: true, room: result.rows[0] });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error?.message || "Failed to create room" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error?.message || "Failed to create room" }, { status: error instanceof TeamAuthorizationError ? 403 : 500 });
   }
 }

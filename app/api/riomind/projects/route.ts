@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const url = new URL(request.url);
 
     const projects = await listRioMindProjects({
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const body = await request.json().catch(() => ({}));
 
     const project = await createRioMindProject({

@@ -718,7 +718,7 @@ function buildDashboardJson(report: any, dashboardType: string) {
 export async function POST(request: NextRequest) {
   try {
     const db = getRioMindPgPool();
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const body = await request.json().catch(() => ({}));
 
     const reportId = clean(body.reportId);

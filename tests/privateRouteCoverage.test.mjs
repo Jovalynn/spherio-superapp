@@ -1,0 +1,6 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync,readdirSync } from "node:fs";
+import { requiresRioMindOperator,isRioMindOperator } from "../lib/riomind/unscoped-api-access.ts";
+function routes(dir){return readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?routes(`${dir}/${e.name}`):e.name==="route.ts"?[`${dir}/${e.name}`]:[]);}
+test("private route boundary has no client owner-header fallback and protects unscoped APIs",()=>{for(const file of routes("app/api/riomind")){const source=readFileSync(file,"utf8");assert.doesNotMatch(source,/headers\.get\("x-(?:riomind|nexus)-owner"\)/);const path="/"+file.replace(/^app\//,"").replace(/\/route.ts$/,"").replace(/\[[^\]]+\]/g,"fixture");if(!source.includes("getRioMindOwnerKey(")&&!path.endsWith("chat/stream")&&!path.endsWith("sources/live"))assert.equal(requiresRioMindOperator(path),true,path);if(path.includes("/teams/")&&!path.includes("/diagnostics")&&!path.includes("/intelligence/")){const count=(source.match(/export async function/g)||[]).length;assert.equal((source.match(/await requireTeamAccess\(/g)||[]).length>=count,true,path);}}assert.equal(isRioMindOperator("unapproved"),false);assert.equal(requiresRioMindOperator("/api/riomind/future-unscoped"),true);});

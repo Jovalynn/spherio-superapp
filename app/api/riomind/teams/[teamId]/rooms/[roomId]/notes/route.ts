@@ -1,13 +1,17 @@
+import { getRioMindOwnerKey } from "@/lib/riomind/db";
+import { requireTeamAccess, TeamAuthorizationError } from "@/lib/riomind/teams/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import { getReadyRioMindTeamsPool } from "@/lib/riomind/teams/db";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ teamId: string; roomId: string }> }
 ) {
   try {
     const { teamId, roomId } = await params;
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, false, false, roomId);
 
     const result = await pool.query(
       `SELECT * FROM riomind_team_room_notes
@@ -19,7 +23,7 @@ export async function GET(
 
     return NextResponse.json({ ok: true, notes: result.rows });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error?.message || "Failed to load notes" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error?.message || "Failed to load notes" }, { status: error instanceof TeamAuthorizationError ? 403 : 500 });
   }
 }
 
@@ -31,6 +35,8 @@ export async function POST(
     const { teamId, roomId } = await params;
     const body = await req.json().catch(() => ({}));
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, true, false, roomId);
 
     const title = String(body.title || "Meeting Notes").trim();
     const noteBody = String(body.body || "").trim();
@@ -51,13 +57,13 @@ export async function POST(
         title,
         noteBody,
         body.noteType || "note",
-        body.createdBy || "local-user",
+        authenticatedSubject,
         body.metadata || {},
       ]
     );
 
     return NextResponse.json({ ok: true, note: result.rows[0] });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error?.message || "Failed to save note" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error?.message || "Failed to save note" }, { status: error instanceof TeamAuthorizationError ? 403 : 500 });
   }
 }

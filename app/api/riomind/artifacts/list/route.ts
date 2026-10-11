@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const url = new URL(request.url);
 
     const artifacts = await listRioMindArtifacts({

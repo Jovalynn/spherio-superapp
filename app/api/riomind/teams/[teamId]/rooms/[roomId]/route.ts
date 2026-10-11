@@ -1,13 +1,17 @@
+import { getRioMindOwnerKey } from "@/lib/riomind/db";
+import { requireTeamAccess, TeamAuthorizationError } from "@/lib/riomind/teams/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import { getReadyRioMindTeamsPool } from "@/lib/riomind/teams/db";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ teamId: string; roomId: string }> }
 ) {
   try {
     const { teamId, roomId } = await params;
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, false, false, roomId);
 
     const roomResult = await pool.query(
       `SELECT * FROM riomind_team_rooms WHERE team_id = $1 AND id = $2`,
@@ -48,7 +52,7 @@ export async function GET(
   } catch (error: any) {
     return NextResponse.json(
       { ok: false, error: error?.message || "Failed to load room" },
-      { status: 500 }
+      { status: error instanceof TeamAuthorizationError ? 403 : 500 }
     );
   }
 }

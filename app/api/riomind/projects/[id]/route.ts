@@ -12,7 +12,7 @@ type ProjectRouteContext = {
 
 export async function GET(request: NextRequest, context: ProjectRouteContext) {
   try {
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const { id } = await context.params;
 
     const project = await getRioMindProject({
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest, context: ProjectRouteContext) {
 
 export async function PATCH(request: NextRequest, context: ProjectRouteContext) {
   try {
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const { id } = await context.params;
     const body = await request.json().catch(() => ({}));
 

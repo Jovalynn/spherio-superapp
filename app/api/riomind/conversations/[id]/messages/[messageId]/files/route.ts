@@ -12,7 +12,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { id, messageId } = await context.params;
     const db = getRioMindPgPool();
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const body = await request.json().catch(() => ({}));
 
     const fileIds = Array.isArray(body?.fileIds)

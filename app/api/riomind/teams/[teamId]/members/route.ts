@@ -1,22 +1,26 @@
+import { getRioMindOwnerKey } from "@/lib/riomind/db";
+import { requireTeamAccess, TeamAuthorizationError } from "@/lib/riomind/teams/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import { getReadyRioMindTeamsPool } from "@/lib/riomind/teams/db";
 
 const ALLOWED_ROLES = new Set(["owner", "admin", "manager", "analyst", "contributor", "viewer"]);
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ teamId: string }> }
 ) {
   try {
     const { teamId } = await params;
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, false, false);
     const result = await pool.query(
       `SELECT * FROM riomind_team_members WHERE team_id = $1 ORDER BY created_at ASC`,
       [teamId]
     );
     return NextResponse.json({ ok: true, members: result.rows });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error?.message || "Failed to list members" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error?.message || "Failed to list members" }, { status: error instanceof TeamAuthorizationError ? 403 : 500 });
   }
 }
 
@@ -28,10 +32,12 @@ export async function POST(
     const { teamId } = await params;
     const body = await req.json().catch(() => ({}));
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, true, true);
 
     const email = body.email ? String(body.email).trim().toLowerCase() : null;
     const displayName = body.displayName ? String(body.displayName).trim() : null;
-    const role = ALLOWED_ROLES.has(body.role) ? body.role : "viewer";
+    const role = ALLOWED_ROLES.has(body.role) && body.role !== "owner" ? body.role : "viewer";
 
     if (!email && !displayName) {
       return NextResponse.json({ ok: false, error: "Member email or display name is required" }, { status: 400 });
@@ -63,13 +69,13 @@ export async function POST(
         body.status || "active",
         body.preferredLanguage || "en",
         body.translationLanguage || null,
-        body.invitedBy || "local-user",
+        authenticatedSubject,
         body.metadata || {},
       ]
     );
 
     return NextResponse.json({ ok: true, member: result.rows[0] });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error?.message || "Failed to add member" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error?.message || "Failed to add member" }, { status: error instanceof TeamAuthorizationError ? 403 : 500 });
   }
 }

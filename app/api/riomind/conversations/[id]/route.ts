@@ -16,7 +16,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     await db.query(
       "SELECT metadata FROM riomind_messages LIMIT 0"
     );
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
 
     const conversationResult = await db.query(
       `
@@ -81,7 +81,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const db = getRioMindPgPool();
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const body = await request.json().catch(() => ({}));
 
     const title = String(body?.title || "").replace(/\s+/g, " ").trim();
@@ -140,7 +140,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const db = getRioMindPgPool();
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
 
     const result = await db.query(
       `

@@ -1,0 +1,11 @@
+# Segment 0 private API deployment prerequisites
+
+All `/api/riomind` paths require a verified Cloudflare Access RS256 JWT. Runtime must set `CF_ACCESS_TEAM_DOMAIN=https://<team>.cloudflareaccess.com` and the exact application `CF_ACCESS_AUD`. Missing configuration, signature failure, wrong issuer/audience, missing/expired tokens and unknown key IDs fail closed. Owner keys are verified subject IDs; client owner headers are ignored. Public monetary endpoints remain public.
+
+Before deployment, the identity/data owner must approve this authentication policy, configure the Access application and audience, inventory legacy owner keys, and explicitly map each legacy record to its authenticated subject. Do not map shared `local_dev` rows to all users. Back up data and apply the reviewed mapping only under owner authorization. This source candidate performs no data migration. An unknown rotated key is rejected until the five-minute bounded certificate cache refresh.
+
+XLSX uploads use ExcelJS in bounded workers (2 concurrent, 128 MiB old generation, 5-second deadline), bounded ZIP expansion and path/entity checks. Legacy XLS requires conversion to XLSX. Malformed spreadsheets fail before filesystem/database publication. Deploy only the tested build and verify anonymous denial, signed per-user isolation, valid uploads, malformed rejection and database/filesystem failure cleanup. Roll back the previous image only together with compensating origin access protection; rolling back to spoofable owner headers reopens the vulnerability.
+
+Teams requests additionally enforce stored team ownership or active membership, role-based writes, room/team binding, and authenticated audit identities. Global team diagnostics require an explicitly configured `CF_ACCESS_TEAMS_OPERATOR_SUBJECTS` allowlist. The owner must approve legacy team/member subject mappings before rollout.
+
+APIs lacking per-user data scoping are restricted to the explicit `CF_ACCESS_RIOMIND_OPERATOR_SUBJECTS` allowlist; absence denies access. This avoids representing verified login as authorization to shared learning/diagnostic data. Operators must approve the allowlist and shared-data policy before activation. Teams cross-source asset references fail closed until a per-source sharing policy is implemented and approved; metadata-only sharing remains available.

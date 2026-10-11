@@ -33,13 +33,7 @@ export function getRioMindPgPool() {
   return globalThis.__riomindPgPool;
 }
 
-export function getRioMindOwnerKey(headers: Headers) {
-  return (
-    headers.get("x-riomind-owner") ||
-    headers.get("x-nexus-owner") ||
-    "local_dev"
-  ).slice(0, 120);
-}
+export { getVerifiedOwnerKey as getRioMindOwnerKey } from "./owner-auth";
 
 export function makeConversationTitle(input?: string) {
   const cleaned = String(input || "New chat").replace(/\s+/g, " ").trim();

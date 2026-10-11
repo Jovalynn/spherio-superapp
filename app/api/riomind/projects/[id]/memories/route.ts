@@ -15,7 +15,7 @@ type ProjectMemoriesRouteContext = {
 
 export async function GET(request: NextRequest, context: ProjectMemoriesRouteContext) {
   try {
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const { id } = await context.params;
     const url = new URL(request.url);
 
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest, context: ProjectMemoriesRouteCon
 
 export async function POST(request: NextRequest, context: ProjectMemoriesRouteContext) {
   try {
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const { id } = await context.params;
     const body = await request.json().catch(() => ({}));
 

@@ -1,15 +1,19 @@
+import { getRioMindOwnerKey } from "@/lib/riomind/db";
+import { requireTeamAccess, TeamAuthorizationError } from "@/lib/riomind/teams/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import { getReadyRioMindTeamsPool } from "@/lib/riomind/teams/db";
 
 const ASSET_TYPES = new Set(["file", "report", "analytics", "artifact", "dashboard", "document", "note"]);
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ teamId: string }> }
 ) {
   try {
     const { teamId } = await params;
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, false, false);
 
     const result = await pool.query(
       `SELECT * FROM riomind_team_shared_assets WHERE team_id = $1 ORDER BY created_at DESC LIMIT 200`,
@@ -20,7 +24,7 @@ export async function GET(
   } catch (error: any) {
     return NextResponse.json(
       { ok: false, error: error?.message || "Failed to list shared assets" },
-      { status: 500 }
+      { status: error instanceof TeamAuthorizationError ? 403 : 500 }
     );
   }
 }
@@ -33,6 +37,8 @@ export async function POST(
     const { teamId } = await params;
     const body = await req.json().catch(() => ({}));
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, true, false);
 
     const assetType = ASSET_TYPES.has(body.assetType) ? body.assetType : "artifact";
     const title = String(body.title || "").trim();
@@ -49,7 +55,13 @@ export async function POST(
       [teamId]
     );
 
-    const workspaceId = body.workspaceId || workspaceResult.rows[0]?.id || null;
+    const workspaceId = workspaceResult.rows[0]?.id || null;
+    if (body.workspaceId && body.workspaceId !== workspaceId) throw new TeamAuthorizationError();
+    if (body.roomId) await requireTeamAccess(pool, authenticatedSubject, teamId, true, false, String(body.roomId));
+    if (body.assetId || body.sourceTable) {
+      // Referenced assets need a reviewed per-source ownership/share policy before activation.
+      throw new TeamAuthorizationError();
+    }
 
     const result = await pool.query(
       `
@@ -68,7 +80,7 @@ export async function POST(
         body.assetId || null,
         title,
         body.sourceTable || null,
-        body.sharedBy || "local-user",
+        authenticatedSubject,
         body.sharedScope || "team",
         body.metadata || {},
       ]
@@ -78,7 +90,7 @@ export async function POST(
   } catch (error: any) {
     return NextResponse.json(
       { ok: false, error: error?.message || "Failed to share asset" },
-      { status: 500 }
+      { status: error instanceof TeamAuthorizationError ? 403 : 500 }
     );
   }
 }

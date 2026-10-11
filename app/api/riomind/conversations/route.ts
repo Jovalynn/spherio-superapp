@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   try {
     const db = getRioMindPgPool();
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
 
     const result = await db.query(
       `
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const db = getRioMindPgPool();
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const body = await request.json().catch(() => ({}));
 
     const title = makeConversationTitle(body?.title || body?.message || "New chat");

@@ -1,3 +1,4 @@
+import { getRioMindOwnerKey } from "@/lib/riomind/db";
 import { NextRequest, NextResponse } from "next/server";
 import { getReadyRioMindTeamsPool } from "@/lib/riomind/teams/db";
 
@@ -5,15 +6,17 @@ function slugify(input: string) {
   return input.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 80);
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
     const result = await pool.query(`
       SELECT t.*
       FROM riomind_teams t
+      WHERE t.owner_user_id=$1 OR EXISTS (SELECT 1 FROM riomind_team_members m WHERE m.team_id=t.id AND m.user_id=$1 AND m.status='active')
       ORDER BY t.created_at DESC
       LIMIT 100
-    `);
+    `, [authenticatedSubject]);
     return NextResponse.json({ ok: true, teams: result.rows });
   } catch (error: any) {
     console.error("GET /api/riomind/teams failed", error);
@@ -24,6 +27,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
     const body = await req.json().catch(() => ({}));
     const name = String(body.name || "").trim();
 
@@ -31,7 +35,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Team name is required" }, { status: 400 });
     }
 
-    const ownerUserId = body.ownerUserId ? String(body.ownerUserId) : "local-user";
+    const ownerUserId = authenticatedSubject;
     const defaultLanguage = body.defaultLanguage ? String(body.defaultLanguage) : "en";
     const slug = `${slugify(body.slug || name) || "team"}-${Math.random().toString(36).slice(2, 7)}`;
 

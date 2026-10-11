@@ -1,0 +1,8 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { requireTeamAccess, requireTeamsOperator } from "../lib/riomind/teams/authorization.ts";
+const team="00000000-0000-0000-0000-000000000001",room="00000000-0000-0000-0000-000000000002";
+function db(rows,roomFound=true){return {query:async(sql,values)=>{assert.ok(values.includes(team));return {rows:sql.includes("team_rooms")?(roomFound?[{id:room}]:[]):rows};}};}
+test("cross-owner access and inactive or unknown memberships fail closed",async()=>{for(const rows of [[{owner_user_id:"other"}],[{owner_user_id:"other",role:"admin",status:"inactive"}],[{role:"unexpected",status:"active"}]])await assert.rejects(requireTeamAccess(db(rows),"user",team,false,false));});
+test("viewer reads; contributor writes; administrative mutation needs admin or owner",async()=>{const viewer=db([{role:"viewer",status:"active"}]);await requireTeamAccess(viewer,"user",team,false,false);await assert.rejects(requireTeamAccess(viewer,"user",team,true,false));const contributor=db([{role:"contributor",status:"active"}]);await requireTeamAccess(contributor,"user",team,true,false);await assert.rejects(requireTeamAccess(contributor,"user",team,true,true));await requireTeamAccess(db([{role:"admin",status:"active"}]),"user",team,true,true);await requireTeamAccess(db([{owner_user_id:"user"}]),"user",team,true,true);});
+test("room must belong to authorized team; global diagnostic access defaults denied",async()=>{await assert.rejects(requireTeamAccess(db([{owner_user_id:"user"}],false),"user",team,false,false,room));assert.throws(()=>requireTeamsOperator("user"));});

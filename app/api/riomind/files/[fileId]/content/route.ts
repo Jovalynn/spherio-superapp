@@ -14,7 +14,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { fileId } = await context.params;
     const db = getRioMindPgPool();
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
 
     const result = await db.query(
       `

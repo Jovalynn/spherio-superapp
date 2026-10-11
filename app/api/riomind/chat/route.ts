@@ -461,7 +461,7 @@ async function loadConversationContext(
 
   try {
     const db = getRioMindPgPool();
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
 
     const result = await db.query(
       `
@@ -1064,7 +1064,7 @@ async function loadRioMindVisionInputs(
   }
 
   const db = getRioMindPgPool();
-  const ownerKey = getRioMindOwnerKey(request.headers);
+  const ownerKey = await getRioMindOwnerKey(request.headers);
   const loaded: RioMindChatVisionInput[] = [];
 
   for (const raw of rawInputs.slice(0, RIOMIND_MAX_VISION_IMAGES)) {
@@ -1573,7 +1573,7 @@ let message = typeof body.message === "string" ? body.message : "";
       };
 
       const artifact = await createExcelArtifact({
-        ownerKey: getRioMindOwnerKey(request.headers),
+        ownerKey: await getRioMindOwnerKey(request.headers),
         title:
           typeof typedArtifactInput.title === "string"
             ? typedArtifactInput.title
@@ -1584,9 +1584,7 @@ let message = typeof body.message === "string" ? body.message : "";
       });
       registerRioMindArtifactSafely({
         ownerKey:
-          request.headers.get("x-riomind-owner") ||
-          request.headers.get("x-nexus-owner") ||
-          "local_dev",
+          await getRioMindOwnerKey(request.headers),
         artifact,
         source: "chat_artifact_generation",
       });
@@ -1607,7 +1605,7 @@ let message = typeof body.message === "string" ? body.message : "";
       ].join("\n");
 
       await logRioMindUsageEvent({
-        ownerKey: getRioMindOwnerKey(request.headers),
+        ownerKey: await getRioMindOwnerKey(request.headers),
         conversationId,
         requestType: "chat_excel_artifact",
         route: "artifact_generation",
@@ -1717,7 +1715,7 @@ let message = typeof body.message === "string" ? body.message : "";
 
   if (docxArtifactInput) {
     const artifact = await createDocxArtifact({
-      ownerKey: getRioMindOwnerKey(request.headers),
+      ownerKey: await getRioMindOwnerKey(request.headers),
       title: docxArtifactInput.title,
       content: docxArtifactInput.content,
       sections: docxArtifactInput.sections,
@@ -1726,9 +1724,7 @@ let message = typeof body.message === "string" ? body.message : "";
     });
     registerRioMindArtifactSafely({
       ownerKey:
-        request.headers.get("x-riomind-owner") ||
-        request.headers.get("x-nexus-owner") ||
-        "local_dev",
+        await getRioMindOwnerKey(request.headers),
       artifact,
       source: "chat_artifact_generation",
     });
@@ -1745,7 +1741,7 @@ let message = typeof body.message === "string" ? body.message : "";
       `[Download modern Word document](${artifact.downloadUrl})`;
 
     await logRioMindUsageEvent({
-      ownerKey: getRioMindOwnerKey(request.headers),
+      ownerKey: await getRioMindOwnerKey(request.headers),
       conversationId,
       requestType: "chat",
       route: nexusRoute.primaryRoute,
@@ -1785,7 +1781,7 @@ let message = typeof body.message === "string" ? body.message : "";
 
   if (pdfArtifactInput) {
     const artifact = await createPdfArtifact({
-      ownerKey: getRioMindOwnerKey(request.headers),
+      ownerKey: await getRioMindOwnerKey(request.headers),
       title: pdfArtifactInput.title,
       content: pdfArtifactInput.content,
       sections: pdfArtifactInput.sections,
@@ -1794,9 +1790,7 @@ let message = typeof body.message === "string" ? body.message : "";
     });
     registerRioMindArtifactSafely({
       ownerKey:
-        request.headers.get("x-riomind-owner") ||
-        request.headers.get("x-nexus-owner") ||
-        "local_dev",
+        await getRioMindOwnerKey(request.headers),
       artifact,
       source: "chat_artifact_generation",
     });
@@ -1813,7 +1807,7 @@ let message = typeof body.message === "string" ? body.message : "";
     const response = formatLongTermMemoryAnswer(memoryResult);
 
     await logRioMindUsageEvent({
-      ownerKey: getRioMindOwnerKey(request.headers),
+      ownerKey: await getRioMindOwnerKey(request.headers),
       conversationId,
       requestType: "chat",
       route: "long_term_memory",
@@ -1857,7 +1851,7 @@ let message = typeof body.message === "string" ? body.message : "";
       `[Download modern PDF document](${artifact.downloadUrl})`;
 
     await logRioMindUsageEvent({
-      ownerKey: getRioMindOwnerKey(request.headers),
+      ownerKey: await getRioMindOwnerKey(request.headers),
       conversationId,
       requestType: "chat",
       route: nexusRoute.primaryRoute,
@@ -1897,7 +1891,7 @@ let message = typeof body.message === "string" ? body.message : "";
 
   if (pptxArtifactInput) {
     const artifact = await createPptxArtifact({
-      ownerKey: getRioMindOwnerKey(request.headers),
+      ownerKey: await getRioMindOwnerKey(request.headers),
       title: pptxArtifactInput.title,
       content: pptxArtifactInput.content,
       sections: pptxArtifactInput.sections,
@@ -1906,9 +1900,7 @@ let message = typeof body.message === "string" ? body.message : "";
     });
     registerRioMindArtifactSafely({
       ownerKey:
-        request.headers.get("x-riomind-owner") ||
-        request.headers.get("x-nexus-owner") ||
-        "local_dev",
+        await getRioMindOwnerKey(request.headers),
       artifact,
       source: "chat_artifact_generation",
     });
@@ -1926,7 +1918,7 @@ let message = typeof body.message === "string" ? body.message : "";
 
 
     await logRioMindUsageEvent({
-      ownerKey: getRioMindOwnerKey(request.headers),
+      ownerKey: await getRioMindOwnerKey(request.headers),
       conversationId,
       requestType: "chat",
       route: nexusRoute.primaryRoute,
@@ -2071,7 +2063,7 @@ let message = typeof body.message === "string" ? body.message : "";
     ].join("\n");
 
     await logRioMindUsageEvent({
-      ownerKey: getRioMindOwnerKey(request.headers),
+      ownerKey: await getRioMindOwnerKey(request.headers),
       conversationId,
       requestType: "chat",
       route: "analytics_workspace",
@@ -2240,7 +2232,7 @@ async function answerRioMindReasoningQuestion(input: {
     const response = formatMetricTrendAnswer(trendResult, metricTrendQuestion.metric);
 
     await logRioMindUsageEvent({
-      ownerKey: getRioMindOwnerKey(request.headers),
+      ownerKey: await getRioMindOwnerKey(request.headers),
       conversationId,
       requestType: "chat",
       route: "metric_trend",
@@ -2310,7 +2302,7 @@ async function answerRioMindReasoningQuestion(input: {
     const response = formatDocumentDiffAnswer(diff);
 
     await logRioMindUsageEvent({
-      ownerKey: getRioMindOwnerKey(request.headers),
+      ownerKey: await getRioMindOwnerKey(request.headers),
       conversationId,
       requestType: "chat",
       route: "document_diff",
@@ -2353,7 +2345,7 @@ async function answerRioMindReasoningQuestion(input: {
     const response = formatLongTermMemoryAnswer(memoryResult);
 
     await logRioMindUsageEvent({
-      ownerKey: getRioMindOwnerKey(request.headers),
+      ownerKey: await getRioMindOwnerKey(request.headers),
       conversationId,
       requestType: "chat",
       route: "long_term_memory",
@@ -2398,7 +2390,7 @@ async function answerRioMindReasoningQuestion(input: {
     const response = formatEnterpriseSearchAnswer(searchResult);
 
     await logRioMindUsageEvent({
-      ownerKey: getRioMindOwnerKey(request.headers),
+      ownerKey: await getRioMindOwnerKey(request.headers),
       conversationId,
       requestType: "chat",
       route: "enterprise_search",
@@ -2451,7 +2443,7 @@ async function answerRioMindReasoningQuestion(input: {
     ].join("\n");
 
     await logRioMindUsageEvent({
-      ownerKey: getRioMindOwnerKey(request.headers),
+      ownerKey: await getRioMindOwnerKey(request.headers),
       conversationId,
       requestType: "chat",
       route: "meeting_graph",
@@ -2546,7 +2538,7 @@ async function answerRioMindReasoningQuestion(input: {
     const publicResponse = cleanPictorialResponseWhenCardsExist(response, imageCards);
 
   await logRioMindUsageEvent({
-    ownerKey: getRioMindOwnerKey(request.headers),
+    ownerKey: await getRioMindOwnerKey(request.headers),
     conversationId,
     requestType: "chat",
     route: nexusRoute.primaryRoute,

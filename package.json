@@ -10,7 +10,8 @@
     "test:pump-safety": "node --test tests/pumpExecutionSafety.test.mjs",
     "test:rio-allocation-ui": "node --test tests/rioAllocationPresentation.test.mjs",
     "test:rusd-sot": "node --experimental-strip-types --test tests/monetaryTruthBoundary.test.mjs && node --test tests/rusdStateAuthority.test.mjs",
-    "test:pump-finalizer-auth": "node --test tests/pumpFinalizerAuth.test.mjs"
+    "test:pump-finalizer-auth": "node --test tests/pumpFinalizerAuth.test.mjs",
+    "postinstall": "node scripts/dependency-hardening.mjs"
   },
   "dependencies": {
     "@cosmjs/cosmwasm-stargate": "^0.34.0",
@@ -25,7 +26,7 @@
     "@cosmos-kit/react-lite": "^2.18.1",
     "@interchain-ui/react": "^1.26.3",
     "@types/pdfkit": "^0.17.6",
-    "axios": "^1.13.5",
+    "axios": "^1.20.0",
     "chain-registry": "^2.0.212",
     "cosmjs-types": "^0.9.0",
     "docx": "^9.7.1",
@@ -34,7 +35,7 @@
     "jszip": "^3.10.1",
     "lucide-react": "^0.577.0",
     "mammoth": "^1.12.0",
-    "next": "16.1.6",
+    "next": "16.4.0",
     "openai": "^6.44.0",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.19.1",
@@ -43,8 +44,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "recharts": "^3.8.1",
-    "ws": "^8.21.0",
-    "xlsx": "^0.18.5"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -53,8 +53,14 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
+    "eslint-config-next": "16.4.0",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "protobufjs": "^7.6.3",
+    "form-data": "^4.0.6",
+    "image-size": "^2.0.4",
+    "uuid": "11.1.1"
   }
 }

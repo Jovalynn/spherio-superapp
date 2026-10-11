@@ -22,7 +22,7 @@ export async function POST(
     const body = await request.json().catch(() => ({}));
     const format = String(body?.format || "").toLowerCase();
 
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const db = getRioMindPgPool();
 
     const reportResult = await db.query(

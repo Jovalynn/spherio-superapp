@@ -1,13 +1,17 @@
+import { getRioMindOwnerKey } from "@/lib/riomind/db";
+import { requireTeamAccess, TeamAuthorizationError } from "@/lib/riomind/teams/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import { getReadyRioMindTeamsPool } from "@/lib/riomind/teams/db";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ teamId: string; roomId: string }> }
 ) {
   try {
     const { teamId, roomId } = await params;
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, false, false, roomId);
 
     const result = await pool.query(
       `SELECT * FROM riomind_team_room_messages
@@ -19,7 +23,7 @@ export async function GET(
 
     return NextResponse.json({ ok: true, messages: result.rows });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error?.message || "Failed to load messages" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error?.message || "Failed to load messages" }, { status: error instanceof TeamAuthorizationError ? 403 : 500 });
   }
 }
 
@@ -31,6 +35,8 @@ export async function POST(
     const { teamId, roomId } = await params;
     const body = await req.json().catch(() => ({}));
     const pool = await getReadyRioMindTeamsPool();
+    const authenticatedSubject = await getRioMindOwnerKey(req.headers);
+    await requireTeamAccess(pool, authenticatedSubject, teamId, true, false, roomId);
 
     const message = String(body.message || "").trim();
     if (!message) {
@@ -47,7 +53,7 @@ export async function POST(
       [
         teamId,
         roomId,
-        body.senderUserId || "local-user",
+        authenticatedSubject,
         body.senderName || "Local User",
         message,
         body.sourceLanguage || "en",
@@ -59,6 +65,6 @@ export async function POST(
 
     return NextResponse.json({ ok: true, message: result.rows[0] });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error?.message || "Failed to save message" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error?.message || "Failed to save message" }, { status: error instanceof TeamAuthorizationError ? 403 : 500 });
   }
 }

@@ -31,7 +31,7 @@ function contentToRows(content: string) {
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const db = getRioMindPgPool();
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const { id } = await context.params;
     const body = await request.json().catch(() => ({}));
     const format = clean(body.format || "pdf").toLowerCase();

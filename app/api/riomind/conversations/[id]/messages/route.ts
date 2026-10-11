@@ -18,7 +18,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     await db.query(
       "SELECT metadata FROM riomind_messages LIMIT 0"
     );
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const body = await request.json().catch(() => ({}));
 
     const role = String(body?.role || "").trim();

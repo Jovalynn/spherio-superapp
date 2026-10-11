@@ -31,7 +31,7 @@ function mapSession(row: any) {
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const db = getRioMindPgPool();
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const { id } = await context.params;
     const body = await request.json().catch(() => ({}));
     const status = clean(body.status || "archived");

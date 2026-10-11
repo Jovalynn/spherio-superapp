@@ -1,10 +1,13 @@
 import { randomUUID } from "crypto";
-import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 
 import { NextRequest, NextResponse } from "next/server";
 
 import { getRioMindOwnerKey, getRioMindPgPool } from "@/lib/riomind/db";
+
+import { extractXlsxPreview, SpreadsheetValidationError } from "@/lib/riomind/xlsx-preview.mjs";
+
+import { publishUploadedFile } from "@/lib/riomind/upload-publication.mjs";
 
 export const runtime = "nodejs";
 
@@ -91,44 +94,10 @@ async function extractSpreadsheetTextPreview(
     return null;
   }
 
-  try {
-    const xlsxModule = await import("xlsx");
-    const XLSX = xlsxModule.default ?? xlsxModule;
-    const workbook = XLSX.read(buffer, { type: "buffer" });
-
-    const sections: string[] = [];
-
-    for (const sheetName of workbook.SheetNames.slice(0, 8)) {
-      const sheet = workbook.Sheets[sheetName];
-      if (!sheet) continue;
-
-      const rows = XLSX.utils.sheet_to_json(sheet, {
-        header: 1,
-        defval: "",
-        blankrows: false,
-      }) as unknown[][];
-
-      if (!rows.length) {
-        sections.push(`Sheet: ${sheetName}\n(empty)`);
-        continue;
-      }
-
-      const previewRows = rows.slice(0, 40).map((row) =>
-        row
-          .slice(0, 12)
-          .map((cell) => String(cell ?? "").replace(/\s+/g, " ").trim())
-          .join(" | ")
-      );
-
-      sections.push([`Sheet: ${sheetName}`, ...previewRows].join("\n"));
-    }
-
-    const extracted = cleanExtractedText(sections.join("\n\n"));
-    return extracted || null;
-  } catch (error) {
-    console.warn("[RioMind Nexus] Spreadsheet extraction failed", error);
-    return null;
+  if (/\.xls$/i.test(originalName) || mimeType === "application/vnd.ms-excel") {
+    throw new SpreadsheetValidationError("Legacy XLS is unsupported; convert the file to XLSX");
   }
+  return extractXlsxPreview(buffer);
 }
 
 
@@ -265,7 +234,7 @@ async function extractPptxTextPreview(
 export async function POST(request: NextRequest) {
   try {
     const db = getRioMindPgPool();
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const form = await request.formData();
 
     const file = form.get("file");
@@ -329,15 +298,13 @@ export async function POST(request: NextRequest) {
     const storedName = `${id}${extension}`;
     const uploadRoot = process.env.RIOMIND_UPLOAD_DIR || "/app/.riomind_uploads";
     const ownerDir = ownerKey.replace(/[^a-zA-Z0-9_.-]/g, "_");
-    const storageDir = path.join(uploadRoot, ownerDir);
-    const storagePath = path.join(storageDir, storedName);
+    const storageDir = path.join(/* turbopackIgnore: true */ uploadRoot, ownerDir);
+    const storagePath = path.join(/* turbopackIgnore: true */ storageDir, storedName);
 
-    await mkdir(storageDir, { recursive: true });
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    await writeFile(storagePath, buffer);
 
     const textLikeExtensions = /\\.(txt|md|markdown|csv|json|log|js|jsx|ts|tsx|py|go|rs|sol|sql|html|css|xml|yaml|yml)$/i;
     const isTextLike =
@@ -403,7 +370,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const result = await db.query(
+    const result = await publishUploadedFile({ db, id, ownerKey, storagePath, buffer, persist: () => db.query(
       `
         INSERT INTO riomind_files (
           id,
@@ -444,7 +411,7 @@ export async function POST(request: NextRequest) {
           textExtractionKind,
         }),
       ]
-    );
+    ) });
 
     const row = result.rows[0];
 
@@ -469,7 +436,7 @@ export async function POST(request: NextRequest) {
         product: "RioMind Nexus",
         error: error instanceof Error ? error.message : "file_upload_failed",
       },
-      { status: 500 }
+      { status: error instanceof SpreadsheetValidationError ? 422 : 500 }
     );
   }
 }

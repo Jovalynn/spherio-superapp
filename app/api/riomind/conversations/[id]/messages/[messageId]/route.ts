@@ -12,7 +12,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const { id, messageId } = await context.params;
     const db = getRioMindPgPool();
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const body = await request.json().catch(() => ({}));
 
     const content = String(body?.content || "").trim();

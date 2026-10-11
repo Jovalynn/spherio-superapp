@@ -53,7 +53,7 @@ function contentTypeForFile(name: string) {
 
 export async function GET(request: NextRequest) {
   try {
-    const ownerKey = getRioMindOwnerKey(request.headers);
+    const ownerKey = await getRioMindOwnerKey(request.headers);
     const name = safeArtifactName(request.nextUrl.searchParams.get("name") || "");
 
     if (!name) {

@@ -1,0 +1,1 @@
+export function publishUploadedFile<T>(input: {db: {query: (sql: string, values: unknown[]) => Promise<{rows: unknown[]}>}; id: string; ownerKey: string; storagePath: string; buffer: Uint8Array; persist: () => Promise<T>}): Promise<T>;

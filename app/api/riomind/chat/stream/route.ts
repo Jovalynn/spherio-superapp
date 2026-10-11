@@ -1,3 +1,4 @@
+import { getVerifiedOwnerKey } from "@/lib/riomind/owner-auth";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -177,14 +178,14 @@ function buildStreamLiveSourceFallback(message: string, payload: any) {
   return lines.join("\n");
 }
 
-async function fetchLiveStreamAnswer(origin: string, message: string) {
+async function fetchLiveStreamAnswer(origin: string, message: string, assertion: string) {
   const queryStartedAt = new Date();
   const thoughtStartedAt = Date.now();
 
   try {
     const liveRes = await fetch(`${origin}/api/riomind/sources/live`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "cf-access-jwt-assertion": assertion },
       body: JSON.stringify({
         query: message,
         mode: "research",
@@ -235,6 +236,7 @@ async function streamText(
 }
 
 export async function POST(request: NextRequest) {
+  await getVerifiedOwnerKey(request.headers);
   const encoder = new TextEncoder();
 
   let body: StreamPayload = {};
@@ -273,7 +275,7 @@ export async function POST(request: NextRequest) {
           status: "connected",
         });
 
-        const origin = new URL(request.url).origin;
+        const origin = "http://127.0.0.1:3000";
 
         if (isFreshNewsQuestion(message)) {
           writeEvent(controller, encoder, "status", {
@@ -281,7 +283,7 @@ export async function POST(request: NextRequest) {
             status: "thinking",
           });
 
-          const liveAnswer = await fetchLiveStreamAnswer(origin, message);
+          const liveAnswer = await fetchLiveStreamAnswer(origin, message, request.headers.get("cf-access-jwt-assertion") || "");
 
           if (liveAnswer) {
             await streamText(controller, encoder, liveAnswer, hasImageInputs);
@@ -312,10 +314,7 @@ export async function POST(request: NextRequest) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-riomind-owner":
-              request.headers.get("x-riomind-owner") ||
-              request.headers.get("x-nexus-owner") ||
-              "local_dev",
+            "cf-access-jwt-assertion": request.headers.get("cf-access-jwt-assertion") || "",
           },
           body: JSON.stringify({
             ...body,
