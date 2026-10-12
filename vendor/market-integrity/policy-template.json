@@ -26,5 +26,9 @@
     "reservePolicyStages": null
   },
   "executionEnabled": false,
-  "unresolvedParametersMustBlock": true
+  "unresolvedParametersMustBlock": true,
+  "reservationTtlSeconds": null,
+  "requiredOwnerDecisions": [
+    "Approve a finite reservation lifetime consistent with canonical freshness and execution revalidation"
+  ]
 }

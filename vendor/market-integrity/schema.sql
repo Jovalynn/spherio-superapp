@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS mi_decisions (
  chain_id text NOT NULL, account_id text NOT NULL, asset_id text NOT NULL,
  pool_id text, idempotency_key text NOT NULL, intent_digest text NOT NULL,
  policy_version text NOT NULL, status text NOT NULL CHECK(status IN
- ('RESERVED','REJECTED','CONSUMED','BROADCAST','AMBIGUOUS','CONFIRMED','CHAIN_REJECTED')),
+ ('RESERVED','REJECTED','CONSUMED','BROADCAST','AMBIGUOUS','CONFIRMED','CHAIN_REJECTED','EXPIRED','POLICY_INVALIDATED')),
  decision jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
  updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
  UNIQUE(chain_id,account_id,asset_id,idempotency_key)
@@ -22,3 +22,8 @@ $$;
 DROP TRIGGER IF EXISTS mi_decision_events_immutable ON mi_decision_events;
 CREATE TRIGGER mi_decision_events_immutable BEFORE UPDATE OR DELETE ON mi_decision_events
  FOR EACH ROW EXECUTE FUNCTION mi_immutable_audit();
+
+-- Versioned candidate migration for pre-expiry ledgers. Existing reservations
+-- without a recorded expiry are retained for owner reconciliation, never guessed.
+ALTER TABLE mi_decisions DROP CONSTRAINT IF EXISTS mi_decisions_status_check;
+ALTER TABLE mi_decisions ADD CONSTRAINT mi_decisions_status_check CHECK(status IN ('RESERVED','REJECTED','CONSUMED','BROADCAST','AMBIGUOUS','CONFIRMED','CHAIN_REJECTED','EXPIRED','POLICY_INVALIDATED'));

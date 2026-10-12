@@ -11,8 +11,15 @@ export class MemoryDecisionLedger {
 }
 export async function authorizeDecision({ledger,loadCanonical,policy,intent,idempotencyKey,now=Date.now(),aiSignals=[]}) {
   if(typeof idempotencyKey!=="string"||!idempotencyKey||idempotencyKey.length>128)throw Error("IDEMPOTENCY_KEY_REQUIRED");
+  const ttl=policy?.reservationTtlSeconds;if(!Number.isSafeInteger(ttl)||ttl<=0||!Number.isSafeInteger(now)||now<0||now+ttl*1000>8640000000000000)throw Error("APPROVED_RESERVATION_LIFETIME_REQUIRED");
   const digest=await intentDigest(intent),key=canonicalJSON([intent.chainId,intent.account,intent.assetId,idempotencyKey]);
   return ledger.atomic(async tx=>{
+    for(const row of tx.rows.values()) {
+      if(row.status!=="RESERVED")continue;
+      const expired=Number.isSafeInteger(row.expiresAt)&&row.expiresAt<=now;
+      const changed=row.intent.chainId===intent.chainId&&row.intent.assetId===intent.assetId&&(row.policyVersion!==policy.version||row.policyApprovalReference!==policy.approvalReference);
+      if(expired||changed){row.status=expired?"EXPIRED":"POLICY_INVALIDATED";row.executionAllowed=false;row.decision="BLOCK";row.reasonCodes=[expired?"RESERVATION_EXPIRED":"POLICY_CHANGED"];tx.append({...row,event:expired?"expire":"policy-invalidate"});}
+    }
     const old=tx.rows.get(key);if(old){if(old.intentDigest!==digest)throw Error("IDEMPOTENCY_INTENT_MISMATCH");return structuredClone(old);}
     let state;try {state=structuredClone(await loadCanonical(intent,now));}catch {state=null;}
     let pending=tx.list().filter(r=>r.executionAllowed&&['RESERVED','CONSUMED','BROADCAST','AMBIGUOUS'].includes(r.status)&&(r.intent.account===intent.account||r.intent.recipient===intent.account||intent.recipient&&(r.intent.account===intent.recipient||r.intent.recipient===intent.recipient))&&r.intent.assetId===intent.assetId);
@@ -34,12 +41,12 @@ export async function authorizeDecision({ledger,loadCanonical,policy,intent,idem
     state.pendingPoolAssetBaseUnits=poolPending.reduce((sum,r)=>sum+amount(r.intent.quantityBaseUnits),0n).toString();
     }
     const decision=deterministicWithAI(evaluateMarketIntegrity(policy,state,intent,now),aiSignals);
-    const row={...decision,authorizationId:crypto.randomUUID(),intentDigest:digest,idempotencyKey,intent:structuredClone(intent),status:decision.executionAllowed?"RESERVED":"REJECTED",createdAt:now,provenanceDigest:await intentDigest(state?.evidence||{})};
+    const row={...decision,authorizationId:crypto.randomUUID(),intentDigest:digest,idempotencyKey,intent:structuredClone(intent),status:decision.executionAllowed?"RESERVED":"REJECTED",createdAt:now,expiresAt:now+ttl*1000,policyApprovalReference:policy.approvalReference,provenanceDigest:await intentDigest(state?.evidence||{})};
     tx.rows.set(key,row);tx.append(row);return structuredClone(row);
   });
 }
-export async function consumeAuthorization(ledger,authorizationId,digest,revalidate) {
- return ledger.atomic(async tx=>{const row=[...tx.rows.values()].find(r=>r.authorizationId===authorizationId);if(!row||row.status!=="RESERVED"||!row.executionAllowed||row.intentDigest!==digest)throw Error("MI_AUTHORIZATION_NOT_AVAILABLE");if(typeof revalidate!=="function"||await revalidate(structuredClone(row),tx)!==true)throw Error("CANONICAL_REVALIDATION_REQUIRED");row.status="CONSUMED";tx.append({...row,event:"consume"});return structuredClone(row);});
+export async function consumeAuthorization(ledger,authorizationId,digest,revalidate,clock=Date.now) {
+ return ledger.atomic(async tx=>{const row=[...tx.rows.values()].find(r=>r.authorizationId===authorizationId);if(!row||row.status!=="RESERVED"||!row.executionAllowed||row.intentDigest!==digest)throw Error("MI_AUTHORIZATION_NOT_AVAILABLE");const now=clock();if(!Number.isSafeInteger(now)||!Number.isSafeInteger(row.expiresAt)||row.expiresAt<=now)throw Error("MI_RESERVATION_EXPIRED_OR_UNVERIFIED");if(typeof revalidate!=="function"||await revalidate(structuredClone(row),tx)!==true)throw Error("CANONICAL_REVALIDATION_REQUIRED");row.status="CONSUMED";tx.append({...row,event:"consume"});return structuredClone(row);});
 }
 export async function reconcileAuthorization(ledger,id,proof) {
  return ledger.atomic(async tx=>{const row=[...tx.rows.values()].find(r=>r.authorizationId===id);if(!row||!['CONSUMED','BROADCAST','AMBIGUOUS'].includes(row.status))throw Error("MI_RECONCILIATION_STATE_INVALID");
@@ -51,3 +58,5 @@ export class CanonicalEventReconciler {
  constructor(){this.events=new Map();this.unavailable=false;}
  accept(event){if(!event?.verified||!event.chainId||!/^([A-Fa-f0-9]{64})$/.test(event.txHash||"")||!Number.isSafeInteger(event.msgIndex)||!Number.isSafeInteger(event.eventIndex)||event.msgIndex<0||event.eventIndex<0||!event.blockHash||!/^([1-9][0-9]*)$/.test(event.height||""))throw Error("INVALID_CANONICAL_EVENT");const key=[event.chainId,event.txHash,event.msgIndex,event.eventIndex].join(':');const payload=canonicalJSON(event);if(this.events.has(key)){if(this.events.get(key)!==payload){this.unavailable=true;throw Error("CONFLICTING_EVENT_REORG_RECONCILIATION_REQUIRED");}return {duplicate:true,applied:false};}if(this.unavailable)throw Error("REORG_RECONCILIATION_REQUIRED");this.events.set(key,payload);return {duplicate:false,applied:true};}
 }
+
+export async function invalidateReservation(ledger,id,digest,reason="POLICY_CHANGED") {return ledger.atomic(async tx=>{const row=[...tx.rows.values()].find(r=>r.authorizationId===id);if(!row||row.status!=="RESERVED"||row.intentDigest!==digest)return false;row.status="POLICY_INVALIDATED";row.executionAllowed=false;row.decision="BLOCK";row.reasonCodes=[reason];tx.append({...row,event:"policy-invalidate"});return true;});}
