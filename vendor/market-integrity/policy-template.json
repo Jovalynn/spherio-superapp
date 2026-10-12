@@ -1,0 +1,30 @@
+{
+  "protocol": "spherio-mi-v1",
+  "version": null,
+  "approved": false,
+  "RIO": {
+    "ordinaryConcentrationBps": 10,
+    "classificationCeilingBandsBps": [
+      20,
+      30,
+      40
+    ],
+    "classificationsSource": "rio_account_classifications",
+    "transactionCeilings": null,
+    "priceImpactDefinition": null,
+    "maxPriceImpactBps": null,
+    "effectiveLiquidityBps": null,
+    "velocityWindows": null,
+    "eligibleCirculatingSupplySource": null
+  },
+  "RUSD": {
+    "supplyCapTokens": "20000000",
+    "decimals": 6,
+    "classificationCeilingsBps": null,
+    "transactionCeilings": null,
+    "velocityWindows": null,
+    "reservePolicyStages": null
+  },
+  "executionEnabled": false,
+  "unresolvedParametersMustBlock": true
+}

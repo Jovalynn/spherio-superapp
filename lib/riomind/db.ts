@@ -1,3 +1,4 @@
+import {createConfiguredPool} from "@/lib/db/configuredPool";
 import { Pool } from "pg";
 
 declare global {
@@ -20,13 +21,13 @@ export function getRioMindPgPool() {
     const connectionString = getConnectionString();
 
     globalThis.__riomindPgPool = connectionString
-      ? new Pool({ connectionString })
-      : new Pool({
+      ? createConfiguredPool({ connectionString })
+      : createConfiguredPool({
           host: process.env.POSTGRES_HOST || process.env.PGHOST || "postgres",
           port: Number(process.env.POSTGRES_PORT || process.env.PGPORT || 5432),
           database: process.env.POSTGRES_DB || process.env.PGDATABASE || "spherio_indexer",
           user: process.env.POSTGRES_USER || process.env.PGUSER || "spherio",
-          password: process.env.POSTGRES_PASSWORD || process.env.PGPASSWORD || "spherio",
+          password: process.env.POSTGRES_PASSWORD || process.env.PGPASSWORD || "",
         });
   }
 

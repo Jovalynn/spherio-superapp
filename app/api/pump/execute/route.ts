@@ -1,3 +1,4 @@
+import { enforceAPIMarketIntegrity } from "@/lib/market-integrity/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
 import {
@@ -171,6 +172,8 @@ async function buildCurveInputFromDb(body: PumpExecuteRequest): Promise<PumpCurv
 }
 
 export async function POST(request: NextRequest) {
+  const miRejection=await enforceAPIMarketIntegrity(request);if(miRejection)return Response.json(miRejection,{status:503});
+
   try {
     const body = (await request.json()) as PumpExecuteRequest;
 

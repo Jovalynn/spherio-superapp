@@ -69,12 +69,13 @@ export const PUMP_LIVE_POLICY = {
     requiresAntiAbuseClearance: true,
     instantPostGraduationPayoutAllowed: false,
     baseRewardBps: 500,
+    baseRewardAccounting: "included_in_stage_one_not_additive",
     milestoneRewards: [
       {
         name: "market_cap_250k",
         conditionType: "rio_market_cap_rusd_equivalent",
         thresholdRusdEquivalent: "250000.000000",
-        rewardBps: 250,
+        rewardBps: 500,
         sustainDays: 3,
         organicBuyersMin: 200,
         organicBuyersTarget: 250,

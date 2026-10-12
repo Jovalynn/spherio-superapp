@@ -1,3 +1,4 @@
+import { enforceAPIMarketIntegrity } from "@/lib/market-integrity/api-guard";
 import { SPHERIO_FEE_POLICY, SPHERIO_TREASURY_MULTISIG } from "@/lib/protocol/treasury";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -290,6 +291,8 @@ function asPositiveAmount(value: unknown) {
 }
 
 export async function POST(req: NextRequest) {
+  const miRejection=await enforceAPIMarketIntegrity(req);if(miRejection)return Response.json(miRejection,{status:503});
+
   let quoteStage = "start";
 
   try {

@@ -1,3 +1,5 @@
+import {createConfiguredPool} from "@/lib/db/configuredPool";
+import { enforceAPIMarketIntegrity } from "@/lib/market-integrity/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +28,8 @@ function requiredChecksPass(stage: EligibilityStage) {
 }
 
 export async function POST(request: NextRequest) {
+  const miRejection=await enforceAPIMarketIntegrity(request);if(miRejection)return Response.json(miRejection,{status:503});
+
   try {
     const body = await request.json().catch(() => ({}));
     const tokenAddress = clean(body.tokenAddress);
@@ -102,11 +106,11 @@ export async function POST(request: NextRequest) {
 
     if (!dryRun) {
       const { Pool } = await import("pg");
-      const pool = new Pool({
+      const pool = createConfiguredPool({
         connectionString:
           process.env.DATABASE_URL ||
           process.env.POSTGRES_URL ||
-          "postgresql://spherio:spherio@postgres:5432/spherio_indexer",
+          "",
       });
 
       try {

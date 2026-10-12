@@ -1,3 +1,4 @@
+import {createConfiguredPool} from "@/lib/db/configuredPool";
 // lib/pump/pump-lifecycle-data.ts
 
 import { Pool } from "pg";
@@ -10,11 +11,11 @@ let pool: Pool | null = null;
 
 function getPool() {
   if (!pool) {
-    pool = new Pool({
+    pool = createConfiguredPool({
       connectionString:
         process.env.DATABASE_URL ||
         process.env.POSTGRES_URL ||
-        "postgresql://spherio:spherio@postgres:5432/spherio_indexer",
+        "",
     });
   }
 

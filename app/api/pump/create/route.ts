@@ -1,3 +1,5 @@
+import {verifyPumpCreation} from "@/lib/pump/creation-proof.mjs";
+import { enforceAPIMarketIntegrity } from "@/lib/market-integrity/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
@@ -110,7 +112,7 @@ async function registerPumpLiveState(params: {
       )
       VALUES ($1,$2,$3,$4,6,$5,'bonding','urio','urio','RUSD',$6,$7,now(),$8,$9,$10::jsonb)
       ON CONFLICT (token_address) DO UPDATE SET
-        creator_address = EXCLUDED.creator_address,
+        creator_address = pump_live_tokens.creator_address,
         token_name = EXCLUDED.token_name,
         token_symbol = EXCLUDED.token_symbol,
         max_supply_base = EXCLUDED.max_supply_base,
@@ -155,7 +157,7 @@ async function registerPumpLiveState(params: {
       VALUES ($1,$2,$3,$4,$5,$6,6,$7,$8,$9,$10::jsonb)
       ON CONFLICT (contract_address) DO UPDATE SET
         symbol = COALESCE(EXCLUDED.symbol, spo20_tokens.symbol),
-        creator = COALESCE(EXCLUDED.creator, spo20_tokens.creator),
+        creator = spo20_tokens.creator,
         height = LEAST(spo20_tokens.height, EXCLUDED.height),
         name = COALESCE(EXCLUDED.name, spo20_tokens.name),
         tx_hash = COALESCE(EXCLUDED.tx_hash, spo20_tokens.tx_hash),
@@ -431,6 +433,8 @@ async function readPayload(request: NextRequest): Promise<PumpCreatePayload> {
 }
 
 export async function POST(request: NextRequest) {
+  const miRejection=await enforceAPIMarketIntegrity(request);if(miRejection)return Response.json(miRejection,{status:503});
+
   try {
     const payload = await readPayload(request);
 
@@ -456,16 +460,12 @@ export async function POST(request: NextRequest) {
 
     const projectId = `pump_${Date.now()}`;
 
-    const tokenAddress =
-      sanitize(payload.tokenAddress) || pseudoAddress(symbol);
-
-    const txHash = sanitize(payload.txHash) || "";
-    const providedCreatedHeight = Number(payload.createdHeight || 0);
-    const createdHeight = await resolveCreatedHeightFromTx(txHash, providedCreatedHeight);
-
-    const onChainConfirmed = Boolean(
-      sanitize(payload.tokenAddress) && sanitize(payload.txHash),
-    );
+    const tokenAddress=sanitize(payload.tokenAddress),txHash=sanitize(payload.txHash);
+    if(!tokenAddress||!txHash)return NextResponse.json({ok:false,available:false,onChainConfirmed:false,registered:false,tokenAddress:null,reason:"FINALIZED_CREATION_PROOF_REQUIRED",error:"Create the token through an authorized wallet operation before registering its finalized chain evidence."},{status:409});
+    const authorizedCreator=JSON.parse(request.headers.get("x-mi-decision-receipt")||"{}").payload?.account;
+    const creationProof=await verifyPumpCreation({tokenAddress,txHash,creator:authorizedCreator},{rpcUrl:process.env.PUMP_CREATION_RPC_URL,chainId:process.env.PUMP_CREATION_CHAIN_ID,spo20Checksum:process.env.PUMP_SPO20_CODE_SHA256,maxAgeSeconds:Number(process.env.PUMP_CREATION_MAX_AGE_SECONDS)});
+    if(payload.creatorAddress&&payload.creatorAddress!==creationProof.creator)return NextResponse.json({ok:false,error:"Creator identity does not match finalized creation evidence"},{status:403});
+    const createdHeight=creationProof.height,onChainConfirmed=true;
 
     let tokenInfo: any = null;
     let tokenMinter: string | null = null;
@@ -506,7 +506,7 @@ export async function POST(request: NextRequest) {
       try {
         pumpRegistration = await registerPumpLiveState({
           tokenAddress,
-          creatorAddress: payload.creatorAddress || tokenMinter || "",
+          creatorAddress: creationProof.creator,
           tokenName,
           symbol,
           totalSupply,

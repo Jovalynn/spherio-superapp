@@ -1,3 +1,4 @@
+import {getRioPriceRusd} from "./rioEconomics";
 export type RioValuationResponse = {
   ok: boolean;
   source?: string;
@@ -48,9 +49,9 @@ export type ValuedPortfolio = {
   valuation: RioValuationResponse;
   totals: {
     rio: number | null;
-    rusd: number;
-    usd: number;
-    usdt: number;
+    rusd: number | null;
+    usd: number | null;
+    usdt: number | null;
     btc: number | null;
   };
   assets: NormalizedPortfolioAsset[];
@@ -60,14 +61,7 @@ export type ValuedPortfolio = {
 
 export const RIO_ASSET_IDS = ["urio", "rio", "RIO"];
 
-export const RUSD_ASSET_IDS = [
-  "leri",
-  "urusd",
-  "rusd",
-  "RUSD",
-  "rio14nurau9scuqhr3sczktx63sr8kdpvwh00zyftamrrn685vex2uus7ne2df",
-  "rio14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9s2rgffs",
-];
+export const RUSD_ASSET_IDS: readonly string[] = Object.freeze([] as string[]); // Canonical identity activation pending.
 
 export function asNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -85,12 +79,12 @@ export function normalizeSymbol(value: unknown): string {
 
 export function isRioAsset(asset: unknown): boolean {
   const value = normalizeAssetId(asset);
-  return RIO_ASSET_IDS.includes(value) || normalizeSymbol(value) === "RIO";
+  return value === "urio";
 }
 
 export function isRusdAsset(asset: unknown): boolean {
   const value = normalizeAssetId(asset);
-  return RUSD_ASSET_IDS.includes(value) || normalizeSymbol(value) === "RUSD";
+  return RUSD_ASSET_IDS.includes(value);
 }
 
 export function humanAmount(raw: unknown, decimals: unknown = 6): number {
@@ -100,13 +94,8 @@ export function humanAmount(raw: unknown, decimals: unknown = 6): number {
   const d = asNumber(decimals);
   const safeDecimals = d === null || d < 0 || d > 30 ? 6 : d;
 
-  // If already human-sized, preserve it.
-  // If it looks like base units, scale it down.
-  if (Math.abs(directAmount) >= Math.pow(10, safeDecimals)) {
-    return directAmount / Math.pow(10, safeDecimals);
-  }
-
-  return directAmount;
+  // This helper accepts explicit base-unit fields. Never infer units from magnitude.
+  return directAmount / Math.pow(10, safeDecimals);
 }
 
 export function extractAssetsFromPortfolio(raw: any): any[] {
@@ -291,9 +280,9 @@ export function valuePortfolioWithRioPrice(params: {
 }): ValuedPortfolio {
   const { address, rawPortfolio, valuation } = params;
 
-  const rioPriceRusd = valuation?.price?.rio?.rusd ?? null;
-  const rioPriceUsd = valuation?.price?.rio?.usd ?? rioPriceRusd;
-  const rioPriceUsdt = valuation?.price?.rio?.usdt ?? rioPriceRusd;
+  const rioPriceRusd = getRioPriceRusd(valuation);
+  const rioPriceUsd: number | null = null;
+  const rioPriceUsdt: number | null = null;
 
   const rawAssets = extractAssetsFromPortfolio(rawPortfolio);
 
@@ -310,19 +299,20 @@ export function valuePortfolioWithRioPrice(params: {
     let valuation_status: "priced" | "unpriced" = "unpriced";
     let valuation_source = "unpriced";
 
-    if (isRioAsset(asset_id) || normalizeSymbol(symbol) === "RIO") {
+    if (isRioAsset(asset_id)) {
+      value_rio=amount;
       if (rioPriceRusd !== null) {
         value_rusd = amount * rioPriceRusd;
-        value_usd = rioPriceUsd !== null ? amount * rioPriceUsd : value_rusd;
-        value_usdt = rioPriceUsdt !== null ? amount * rioPriceUsdt : value_rusd;
+        value_usd = rioPriceUsd !== null ? amount * rioPriceUsd : null;
+        value_usdt = rioPriceUsdt !== null ? amount * rioPriceUsdt : null;
         value_rio = amount;
         valuation_status = "priced";
         valuation_source = "rioex_valuation_rio";
       }
-    } else if (isRusdAsset(asset_id) || normalizeSymbol(symbol) === "RUSD") {
+    } else if (isRusdAsset(asset_id)) {
       value_rusd = amount;
-      value_usd = amount;
-      value_usdt = amount;
+      value_usd = null;
+      value_usdt = null;
 
       if (rioPriceRusd && rioPriceRusd > 0) {
         value_rio = amount / rioPriceRusd;
@@ -330,40 +320,8 @@ export function valuePortfolioWithRioPrice(params: {
 
       valuation_status = "priced";
       valuation_source = "canonical_rusd_par";
-    } else {
-      const embeddedRio =
-        asNumber(asset?.value_rio) ??
-        asNumber(asset?.rio_value) ??
-        asNumber(asset?.valuation?.rio);
-
-      const embeddedRusd =
-        asNumber(asset?.value_rusd) ??
-        asNumber(asset?.rusd_value) ??
-        asNumber(asset?.value_usd) ??
-        asNumber(asset?.usd_value) ??
-        asNumber(asset?.valuation?.rusd);
-
-      if (embeddedRusd !== null) {
-        value_rusd = embeddedRusd;
-        value_usd = embeddedRusd;
-        value_usdt = embeddedRusd;
-
-        if (rioPriceRusd && rioPriceRusd > 0) {
-          value_rio = embeddedRusd / rioPriceRusd;
-        }
-
-        valuation_status = "priced";
-        valuation_source = "embedded_asset_value";
-      } else if (embeddedRio !== null && rioPriceRusd !== null) {
-        value_rio = embeddedRio;
-        value_rusd = embeddedRio * rioPriceRusd;
-        value_usd = value_rusd;
-        value_usdt = value_rusd;
-
-        valuation_status = "priced";
-        valuation_source = "embedded_rio_value";
-      }
     }
+    // Embedded client/DB values and token labels cannot establish monetary values.
 
     return {
       asset_id,
@@ -390,14 +348,14 @@ export function valuePortfolioWithRioPrice(params: {
     };
   });
 
-  const totalRusd = assets.reduce((sum, asset) => sum + (asset.value_rusd ?? 0), 0);
-  const totalUsd = assets.reduce((sum, asset) => sum + (asset.value_usd ?? 0), 0);
-  const totalUsdt = assets.reduce((sum, asset) => sum + (asset.value_usdt ?? 0), 0);
+  const totalRusd = assets.some(asset=>asset.value_rusd===null)?null:assets.reduce((sum, asset) => sum + (asset.value_rusd ?? 0), 0);
+  const totalUsd = assets.some(asset=>asset.value_usd===null)?null:assets.reduce((sum, asset) => sum + (asset.value_usd ?? 0), 0);
+  const totalUsdt = assets.some(asset=>asset.value_usdt===null)?null:assets.reduce((sum, asset) => sum + (asset.value_usdt ?? 0), 0);
 
   const totalRio =
-    rioPriceRusd && rioPriceRusd > 0
+    rioPriceRusd && rioPriceRusd > 0 && totalRusd!==null
       ? totalRusd / rioPriceRusd
-      : assets.reduce((sum, asset) => sum + (asset.value_rio ?? 0), 0);
+      : assets.some(asset=>asset.value_rio===null)?null:assets.reduce((sum, asset) => sum + (asset.value_rio ?? 0), 0);
 
   return {
     ok: true,

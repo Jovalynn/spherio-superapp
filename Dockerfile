@@ -33,6 +33,7 @@ LABEL org.opencontainers.image.revision=$SOURCE_REVISION \
 WORKDIR /app
 
 COPY package*.json ./
+COPY vendor/market-integrity ./vendor/market-integrity
 COPY scripts/dependency-hardening.mjs ./scripts/dependency-hardening.mjs
 RUN npm config set registry https://registry.npmjs.org/ \
   && npm config set fetch-retries 5 \

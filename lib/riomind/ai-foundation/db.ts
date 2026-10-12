@@ -1,3 +1,4 @@
+import {createConfiguredPool} from "@/lib/db/configuredPool";
 import { Pool } from "pg";
 
 let pool: Pool | null = null;
@@ -13,13 +14,13 @@ export function normalizeAiLayer(value: unknown): RioMindAiLayer {
 export function getRioMindAiFoundationPool() {
   if (pool) return pool;
 
-  pool = new Pool({
+  pool = createConfiguredPool({
     connectionString: process.env.DATABASE_URL,
     host: process.env.POSTGRES_HOST || process.env.PGHOST || "postgres",
     port: Number(process.env.POSTGRES_PORT || process.env.PGPORT || 5432),
     database: process.env.POSTGRES_DB || process.env.PGDATABASE || "spherio_indexer",
     user: process.env.POSTGRES_USER || process.env.PGUSER || "spherio",
-    password: process.env.POSTGRES_PASSWORD || process.env.PGPASSWORD || "spherio",
+    password: process.env.POSTGRES_PASSWORD || process.env.PGPASSWORD || "",
     ssl: process.env.POSTGRES_SSL === "true" ? { rejectUnauthorized: false } : undefined,
   });
 

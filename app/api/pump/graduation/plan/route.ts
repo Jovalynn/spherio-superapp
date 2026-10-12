@@ -1,3 +1,4 @@
+import { enforceAPIMarketIntegrity } from "@/lib/market-integrity/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { unavailablePumpPrice } from "@/lib/pump/price-authority.mjs";
 import { PUMP_GRADUATION_SEED_RUSD } from "@/lib/pump/constants";
@@ -7,6 +8,8 @@ export const revalidate = 0;
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
+  const miRejection=await enforceAPIMarketIntegrity(request);if(miRejection)return Response.json(miRejection,{status:503});
+
   const body = await request.json().catch(() => ({}));
   const tokenAddress = typeof body?.tokenAddress === "string" ? body.tokenAddress.trim()
     : typeof body?.token === "string" ? body.token.trim() : "";

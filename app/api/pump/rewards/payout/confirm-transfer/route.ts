@@ -1,3 +1,6 @@
+import {createConfiguredPool} from "@/lib/db/configuredPool";
+import { verifyPumpRewardSettlement } from "@/lib/pump/settlement-proof.mjs";
+import { enforceAPIMarketIntegrity } from "@/lib/market-integrity/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
 
@@ -9,11 +12,11 @@ let pool: Pool | null = null;
 
 function getPool() {
   if (!pool) {
-    pool = new Pool({
+    pool = createConfiguredPool({
       connectionString:
         process.env.DATABASE_URL ||
         process.env.POSTGRES_URL ||
-        "postgresql://spherio:spherio@postgres:5432/spherio_indexer",
+        "",
     });
   }
 
@@ -92,6 +95,8 @@ function stageOrder(stage: string) {
 }
 
 export async function POST(request: NextRequest) {
+  const miRejection=await enforceAPIMarketIntegrity(request);if(miRejection)return Response.json(miRejection,{status:503});
+
   try {
     const adminError = requireAdmin(request);
     if (adminError) return adminError;
@@ -102,7 +107,7 @@ export async function POST(request: NextRequest) {
     const rewardStage = clean(body.rewardStage);
     const txHash = clean(body.txHash);
     const confirmationIntent = clean(body.confirmationIntent || body.payoutConfirmationIntent || "");
-    const blockHeight = Number.isFinite(Number(body.blockHeight)) ? Number(body.blockHeight) : null;
+    let blockHeight: number | null = null;
     const eventIndex = Number.isFinite(Number(body.eventIndex))
       ? Number(body.eventIndex)
       : stageOrder(rewardStage);
@@ -173,6 +178,9 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Caller intent/hash/height and an admin secret are not settlement evidence.
+      const settlement=await verifyPumpRewardSettlement(txHash,{recipient:transfer.destination_address||transfer.creator_address,stableAmountRusd:String(transfer.stable_amount_rusd||"0"),rioAmountUrio:String(transfer.rio_amount_urio||"0")},{rpcUrl:process.env.PUMP_SETTLEMENT_RPC_URL,chainId:process.env.PUMP_SETTLEMENT_CHAIN_ID,treasury:process.env.PUMP_SETTLEMENT_TREASURY_ADDRESS,rusdContract:process.env.PUMP_SETTLEMENT_RUSD_CONTRACT,maxAgeSeconds:Number(process.env.PUMP_SETTLEMENT_MAX_AGE_SECONDS)});
+      blockHeight=settlement.height;
       if (String(transfer.payout_status).toLowerCase() === "confirmed") {
         await client.query("ROLLBACK");
         return NextResponse.json({

@@ -62,12 +62,16 @@ export default function ResearchDashboardPage() {
         fetch("/api/riomind/projects?limit=100", { cache: "no-store" }),
       ]);
 
+      if([sessionsRes,reportsRes,artifactsRes,projectsRes].some(response=>!response.ok))throw new Error("Dashboard API unavailable");
+
       const [sessionsData, reportsData, artifactsData, projectsData] = await Promise.all([
         sessionsRes.json(),
         reportsRes.json(),
         artifactsRes.json(),
         projectsRes.json(),
       ]);
+
+      if([sessionsData,reportsData,artifactsData,projectsData].some(data=>data?.ok===false))throw new Error("Dashboard API rejected request");
 
       setSessions(Array.isArray(sessionsData.sessions) ? sessionsData.sessions : []);
       setReports(Array.isArray(reportsData.reports) ? reportsData.reports : []);

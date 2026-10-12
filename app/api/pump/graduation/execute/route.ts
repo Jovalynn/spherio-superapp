@@ -1,3 +1,4 @@
+import { enforceAPIMarketIntegrity } from "@/lib/market-integrity/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { SigningCosmWasmClient } from "@cosmjs/cosmwasm-stargate";
 import { DirectSecp256k1HdWallet } from "@cosmjs/proto-signing";
@@ -324,6 +325,8 @@ async function executeFinalizerStepWithFallback(params: {
   }
 }
 export async function POST(request: NextRequest) {
+  const miRejection=await enforceAPIMarketIntegrity(request);if(miRejection)return Response.json(miRejection,{status:503});
+
   if (!isAuthorizedPumpFinalizer(request)) {
     return NextResponse.json(
       { ok: false, error: "Unauthorized PUMP finalizer request." },

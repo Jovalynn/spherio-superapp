@@ -1,0 +1,25 @@
+{
+  "name": "@spherio/market-integrity",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": {
+      "types": "./index.d.mts",
+      "default": "./index.mjs"
+    },
+    "./receipt": {
+      "types": "./receipt.d.mts",
+      "default": "./receipt.mjs"
+    },
+    "./ledger": "./ledger.mjs",
+    "./pump": "./pump.mjs",
+    "./twap": "./twap.mjs",
+    "./postgres-ledger": "./postgres-ledger.mjs",
+    "./gateway": "./gateway.mjs"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "types": "./index.d.mts"
+}

@@ -1,3 +1,4 @@
+import { requiresMarketIntegrity, enforceAPIMarketIntegrity } from "./lib/market-integrity/api-guard";
 import { requiresRioMindOperator, isRioMindOperator } from "./lib/riomind/unscoped-api-access";
 import { getVerifiedOwnerKey } from "./lib/riomind/owner-auth";
 import { NextRequest, NextResponse } from "next/server";
@@ -42,6 +43,11 @@ export async function proxy(request: NextRequest) {
       if (requiresRioMindOperator(pathname) && !isRioMindOperator(subject)) return NextResponse.json({ok:false,error:"Operator access required"}, {status:403});
     }
     catch { return NextResponse.json({ ok: false, error: "Authenticated identity required" }, { status: 401 }); }
+  }
+
+  if (requiresMarketIntegrity(pathname,request.method)) {
+    const rejected=await enforceAPIMarketIntegrity(request,false);
+    if(rejected)return NextResponse.json(rejected,{status:503});
   }
 
   if (isAssetOrApiPath(pathname)) {

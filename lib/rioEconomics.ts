@@ -17,7 +17,8 @@ export function asFiniteNumber(value: unknown): number | null {
 }
 
 export function getRioPriceRusd(valuation: RioValuationResponse | null | undefined): number | null {
-  return valuation?.price?.rio?.rusd ?? null;
+  // No approved reference-price adapter is configured. Pool/DB estimates are not authority.
+  return null;
 }
 
 export function valueRioAmount(
@@ -45,8 +46,8 @@ export function valueRioAmount(
   return {
     rio,
     rusd,
-    usd: rusd,
-    usdt: rusd,
+    usd: null,
+    usdt: null,
     btc: null,
     source,
     status: "priced",

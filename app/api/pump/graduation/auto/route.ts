@@ -1,3 +1,5 @@
+import {createConfiguredPool} from "@/lib/db/configuredPool";
+import { enforceAPIMarketIntegrity } from "@/lib/market-integrity/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
 import { SigningCosmWasmClient } from "@cosmjs/cosmwasm-stargate";
@@ -96,11 +98,11 @@ let pool: Pool | null = null;
 
 function getPool() {
   if (!pool) {
-    pool = new Pool({
+    pool = createConfiguredPool({
       connectionString:
         process.env.DATABASE_URL ||
         process.env.POSTGRES_URL ||
-        "postgresql://spherio:spherio@postgres:5432/spherio_indexer",
+        "",
     });
   }
 
@@ -720,6 +722,8 @@ async function resolveTxHeight(txHash: string) {
 }
 
 export async function POST(request: NextRequest) {
+  const miRejection=await enforceAPIMarketIntegrity(request);if(miRejection)return Response.json(miRejection,{status:503});
+
   try {
     if (!isAuthorizedPumpFinalizer(request, ADMIN_TOKEN)) {
       return NextResponse.json(

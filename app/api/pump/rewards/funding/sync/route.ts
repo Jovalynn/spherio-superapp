@@ -1,3 +1,5 @@
+import {createConfiguredPool} from "@/lib/db/configuredPool";
+import { enforceAPIMarketIntegrity } from "@/lib/market-integrity/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
 
@@ -9,11 +11,11 @@ let pool: Pool | null = null;
 
 function getPool() {
   if (!pool) {
-    pool = new Pool({
+    pool = createConfiguredPool({
       connectionString:
         process.env.DATABASE_URL ||
         process.env.POSTGRES_URL ||
-        "postgresql://spherio:spherio@postgres:5432/spherio_indexer",
+        "",
     });
   }
 
@@ -40,6 +42,8 @@ function deriveFundingStatus(row: any) {
 }
 
 export async function POST(request: NextRequest) {
+  const miRejection=await enforceAPIMarketIntegrity(request);if(miRejection)return Response.json(miRejection,{status:503});
+
   try {
     const body = await request.json().catch(() => ({}));
     const tokenAddress = String(body.tokenAddress || "").trim();

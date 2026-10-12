@@ -1,10 +1,12 @@
 export const PUMP_GRADUATION_TARGET_RUSD = 65_000;
 export const PUMP_GRADUATION_SEED_RUSD = 15_000;
 
-export const PUMP_GRADUATION_REWARD_RESERVE_RUSD = 5_000;
+export const PUMP_GRADUATION_REWARD_RESERVE_RUSD: null = null;
 
 export const PUMP_CREATOR_REWARD_TOTAL_PERCENT = 10;
 export const PUMP_CREATOR_REWARD_STAGE_PERCENT = 5;
+export const PUMP_CREATOR_REWARD_STAGE_TWO_PERCENT = 2.5;
+export const PUMP_CREATOR_REWARD_STAGE_THREE_PERCENT = 2.5;
 
 // Market-cap thresholds are RIO-settled and measured through RIO/RUSD valuation.
 // They do not mean literal RUSD custody or literal RUSD payment.
@@ -12,8 +14,8 @@ export const PUMP_REWARD_STAGE_ONE_MARKET_CAP_RUSD_EQUIVALENT = 250_000;
 export const PUMP_REWARD_STAGE_ONE_MARKET_CAP_RUSD =
   PUMP_REWARD_STAGE_ONE_MARKET_CAP_RUSD_EQUIVALENT;
 export const PUMP_REWARD_STAGE_ONE_SUSTAIN_DAYS = 3;
-export const PUMP_REWARD_STAGE_ONE_ORGANIC_BUYERS_MIN = 100;
-export const PUMP_REWARD_STAGE_ONE_ORGANIC_BUYERS_TARGET = 150;
+export const PUMP_REWARD_STAGE_ONE_ORGANIC_BUYERS_MIN = 200;
+export const PUMP_REWARD_STAGE_ONE_ORGANIC_BUYERS_TARGET = 250;
 
 export const PUMP_REWARD_STAGE_TWO_MARKET_CAP_RUSD_EQUIVALENT = 500_000;
 export const PUMP_REWARD_STAGE_TWO_MARKET_CAP_RUSD =
@@ -44,13 +46,8 @@ export const PUMP_REWARD_SUSTAIN_DAYS = PUMP_REWARD_STAGE_TWO_SUSTAIN_DAYS;
 // RIO seed quantities require an approved canonical RIO/RUSD price.
 // No fixed reference conversion is exported as execution authority.
 
-export const PUMP_GRADUATION_REMAINING_AFTER_SEED_RUSD =
-  PUMP_GRADUATION_TARGET_RUSD - PUMP_GRADUATION_SEED_RUSD;
-
-export const PUMP_CREATOR_REWARD_TOTAL_RUSD =
-  PUMP_GRADUATION_REMAINING_AFTER_SEED_RUSD *
-  (PUMP_CREATOR_REWARD_TOTAL_PERCENT / 100);
-
-export const PUMP_CREATOR_REWARD_STAGE_RUSD =
-  PUMP_GRADUATION_REMAINING_AFTER_SEED_RUSD *
-  (PUMP_CREATOR_REWARD_STAGE_PERCENT / 100);
+// Reward cash must be measured from actual verified post-seed surplus.
+// The 65K market-cap threshold is not a funding balance.
+export const PUMP_GRADUATION_REMAINING_AFTER_SEED_RUSD: null = null;
+export const PUMP_CREATOR_REWARD_TOTAL_RUSD: null = null;
+export const PUMP_CREATOR_REWARD_STAGE_RUSD: null = null;
