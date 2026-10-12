@@ -113,7 +113,6 @@ function reserveQuote(input: {
 }
 
 export async function POST(req: NextRequest) {
-  const miRejection=await enforceAPIMarketIntegrity(req);if(miRejection)return Response.json(miRejection,{status:503});
 
   try {
     const body = await req.json();

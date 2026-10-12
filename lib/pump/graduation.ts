@@ -32,6 +32,9 @@ export type PumpGraduationState = {
 
   stage: PumpGraduationStage;
   stageLabel: string;
+  available:false;
+  authoritative:false;
+  reason:string;
   progressPercent: number;
   graduationReady: boolean;
   graduationTarget: "lp_activation";
@@ -54,17 +57,17 @@ export type PumpGraduationState = {
     graduationTargetUsdMin: number;
     graduationTargetUsdMax: number;
     lpTargetUsd: number;
-    graduationTargetRio: number;
-    graduationTargetRioMin: number;
-    graduationTargetRioMax: number;
-    lpTargetRio: number;
+    graduationTargetRio: null;
+    graduationTargetRioMin: null;
+    graduationTargetRioMax: null;
+    lpTargetRio: null;
   };
 
   remaining: {
     holders: number;
     momentumScore: number;
-    liquidityCommittedRio: number;
-    realBaseReserveRio: number;
+    liquidityCommittedRio: null;
+    realBaseReserveRio: null;
   };
 
   narrative: {
@@ -74,7 +77,7 @@ export type PumpGraduationState = {
   };
 };
 
-const DEFAULT_RIO_PRICE_USD = 1;
+// This display helper cannot authorize monetary lifecycle transitions.
 
 function clampPercent(value: number) {
   if (!Number.isFinite(value)) return 0;
@@ -93,8 +96,8 @@ export function buildPumpGraduationState(
 
   const holders = Math.max(0, input.holders ?? 0);
   const watchers = Math.max(0, input.watchers ?? 0);
-  const momentumScore = Math.max(0, Math.min(100, input.momentumScore ?? 18));
-  const communityScore = Math.max(0, Math.min(100, input.communityScore ?? 24));
+  const momentumScore = Math.max(0, Math.min(100, input.momentumScore ?? 0));
+  const communityScore = Math.max(0, Math.min(100, input.communityScore ?? 0));
   const liquidityCommittedRio = Math.max(0, input.liquidityCommittedRio ?? 0);
   const realBaseReserveRio = Math.max(0, input.realBaseReserveRio ?? 0);
   const volume24hUsd = Math.max(0, input.volume24hUsd ?? 0);
@@ -107,35 +110,10 @@ export function buildPumpGraduationState(
   const graduationTargetUsdMax = economics.graduationTargetUsdMax;
   const lpTargetUsd = economics.lpTargetUsd;
 
-  const graduationTargetRio = graduationTargetUsd / DEFAULT_RIO_PRICE_USD;
-  const graduationTargetRioMin = graduationTargetUsdMin / DEFAULT_RIO_PRICE_USD;
-  const graduationTargetRioMax = graduationTargetUsdMax / DEFAULT_RIO_PRICE_USD;
-  const lpTargetRio = lpTargetUsd / DEFAULT_RIO_PRICE_USD;
-
-  const holderProgress = (holders / Math.max(minHolders, 1)) * 100;
-  const momentumProgress = (momentumScore / Math.max(minMomentumScore, 1)) * 100;
-  const reserveProgress = (realBaseReserveRio / Math.max(graduationTargetRio, 1)) * 100;
-
-  const rawProgress = average([
-    holderProgress,
-    momentumProgress,
-    reserveProgress,
-  ]);
-
-  const progressPercent = clampPercent(rawProgress);
-
-  const graduationReady =
-    holders >= minHolders &&
-    momentumScore >= minMomentumScore &&
-    realBaseReserveRio >= graduationTargetRioMin;
-
-  const lpActivationReady =
-    graduationReady && liquidityCommittedRio >= lpTargetRio;
-
-  const remainingHolders = Math.max(0, minHolders - holders);
-  const remainingMomentumScore = Math.max(0, minMomentumScore - momentumScore);
-  const remainingLiquidityCommittedRio = Math.max(0, lpTargetRio - liquidityCommittedRio);
-  const remainingRealBaseReserveRio = Math.max(0, graduationTargetRioMin - realBaseReserveRio);
+  const graduationTargetRio=null,graduationTargetRioMin=null,graduationTargetRioMax=null,lpTargetRio=null;
+  const progressPercent=0,graduationReady=false,lpActivationReady=false;
+  const remainingHolders=Math.max(0,minHolders-holders),remainingMomentumScore=Math.max(0,minMomentumScore-momentumScore);
+  const remainingLiquidityCommittedRio=null,remainingRealBaseReserveRio=null;
 
   let stage: PumpGraduationStage = "momentum";
   let stageLabel = "Momentum";
@@ -175,6 +153,7 @@ export function buildPumpGraduationState(
     lpActivationLabel = lpActivationReady ? "LP activation ready" : "LP capital pending";
   }
 
+  stageLabel="Unavailable";summary="Canonical graduation and liquidity evidence is unavailable.";nextAction="Reconcile verified market capitalization, bonding and liquidity proofs.";lpActivationLabel="Unverified";
   return {
     tokenAddress: input.tokenAddress,
     symbol: input.symbol,
@@ -183,6 +162,7 @@ export function buildPumpGraduationState(
     baseAsset: input.baseAsset ?? "RIO",
     stage,
     stageLabel,
+    available:false,authoritative:false,reason:"CANONICAL_PRICE_AND_LIFECYCLE_EVIDENCE_REQUIRED",
     progressPercent,
     graduationReady,
     graduationTarget: "lp_activation",

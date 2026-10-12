@@ -8,9 +8,12 @@ import { getApprovedHybridByLabel } from "./hybrids";
 export type PrimeFeeQuote = {
   templateId: string;
   tier: PrimeFeeTier;
-  feeUsd: number;
-  feeRio: number;
-  rioPriceUsd: number;
+  feeUsd: null;
+  feeRio: null;
+  rioPriceUsd: null;
+  available: false;
+  authoritative: false;
+  configuredFeeReferenceUsd: number;
   label: string;
   hybridLabel?: string;
   feeRecipient: string;
@@ -44,19 +47,15 @@ export function quotePrimeFee(params: {
     }
   }
 
-  const rioPriceUsd = params.rioPriceUsd;
-  if (rioPriceUsd <= 0) {
-    throw new Error("rioPriceUsd must be greater than zero");
-  }
-
-  const feeRio = Number((feeUsd / rioPriceUsd).toFixed(6));
+  // Caller prices do not establish an approved executable fee conversion.
 
   return {
     templateId: template.id,
     tier: template.feeTier,
-    feeUsd,
-    feeRio,
-    rioPriceUsd,
+    feeUsd:null,
+    feeRio:null,
+    rioPriceUsd:null,
+    available:false,authoritative:false,configuredFeeReferenceUsd:feeUsd,
     label,
     hybridLabel: params.hybridLabel,
     feeRecipient: PRIME_TREASURY_RECIPIENT,

@@ -1,3 +1,7 @@
+import {createHash} from "crypto";
+import {verifyPumpCreation} from "@/lib/pump/creation-proof.mjs";
+import {decimalBaseUnits} from "@/lib/pump/settlement-proof.mjs";
+import {createConfiguredPool} from "@/lib/db/configuredPool";
 import { enforceAPIMarketIntegrity } from "@/lib/market-integrity/api-guard";
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -15,7 +19,7 @@ declare global {
 async function getPrimeCreatePgPool() {
   if (!globalThis.__primeCreatePgPool) {
     const { Pool } = await import("pg");
-    globalThis.__primeCreatePgPool = new Pool({
+    globalThis.__primeCreatePgPool = createConfiguredPool({
       connectionString: process.env.DATABASE_URL,
       host: process.env.PGHOST,
       port: process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
@@ -29,16 +33,7 @@ async function getPrimeCreatePgPool() {
   return globalThis.__primeCreatePgPool;
 }
 
-function primeToBaseUnits(value: string, decimals = 6): string {
-  const raw = String(value || "").trim();
-  if (!raw) return "0";
-
-  const [wholePart, fracPart = ""] = raw.split(".");
-  const whole = wholePart.replace(/[^\d]/g, "") || "0";
-  const frac = fracPart.replace(/[^\d]/g, "").slice(0, decimals).padEnd(decimals, "0");
-
-  return BigInt(`${whole}${frac}`).toString();
-}
+function primeToBaseUnits(value:string,decimals=6):string {if(decimals!==6)throw Error("Unsupported Prime decimals");return decimalBaseUnits(value);}
 
 function sanitize(value: unknown) {
   return String(value ?? "").trim();
@@ -52,9 +47,9 @@ export async function POST(request: NextRequest) {
 
     const tokenAddress = sanitize(body.tokenAddress);
     const txHash = sanitize(body.txHash);
-    const creatorAddress = sanitize(body.creatorAddress);
-    const createdHeight = Number(body.createdHeight || 0);
-    const factoryAddress = sanitize(body.factoryAddress);
+    let creatorAddress = sanitize(body.creatorAddress);
+    let createdHeight: number;
+    let factoryAddress: string;
 
     if (!tokenAddress || !tokenAddress.startsWith("rio1")) {
       return NextResponse.json(
@@ -70,7 +65,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const projectId = `prime_${Date.now()}`;
+    const authorizedCreator=JSON.parse(request.headers.get("x-mi-decision-receipt")||"{}").payload?.account;
+    const proof=await verifyPumpCreation({tokenAddress,txHash,creator:authorizedCreator},{product:"Prime",rpcUrl:process.env.PRIME_CREATION_RPC_URL,chainId:process.env.PRIME_CREATION_CHAIN_ID,spo20Checksum:process.env.PRIME_SPO20_CODE_SHA256,maxAgeSeconds:Number(process.env.PRIME_CREATION_MAX_AGE_SECONDS)});
+    if(creatorAddress&&creatorAddress!==proof.creator||body.totalSupply&&primeToBaseUnits(String(body.totalSupply),6)!==String(proof.tokenInfo.total_supply))return NextResponse.json({ok:false,error:"Prime creator or supply does not match canonical creation evidence"},{status:403});
+    creatorAddress=proof.creator;createdHeight=proof.height;factoryAddress=proof.factoryAddress;
+    const projectId="prime_"+createHash("sha256").update(proof.reference+":"+tokenAddress).digest("hex").slice(0,32);
 
     const config = buildPrimeProjectConfig({
       templateId: body.templateId,
@@ -190,7 +189,7 @@ export async function POST(request: NextRequest) {
       VALUES ($1,$2,$3,$4,$5,$6,$7,6,$8,$9,$10,$11::jsonb)
       ON CONFLICT (contract_address) DO UPDATE SET
         symbol = COALESCE(EXCLUDED.symbol, spo20_tokens.symbol),
-        creator = COALESCE(EXCLUDED.creator, spo20_tokens.creator),
+        creator = spo20_tokens.creator,
         height = LEAST(spo20_tokens.height, EXCLUDED.height),
         name = COALESCE(EXCLUDED.name, spo20_tokens.name),
         factory_address = COALESCE(EXCLUDED.factory_address, spo20_tokens.factory_address),
@@ -208,7 +207,7 @@ export async function POST(request: NextRequest) {
         config.projectName,
         factoryAddress || null,
         txHash,
-        primeToBaseUnits(String(body.totalSupply || "1000000000"), 6),
+        String(proof.tokenInfo.total_supply),
         sanitize(body.statement) || null,
         sanitize(body.logoUrl) || null,
         JSON.stringify(metadataJson),

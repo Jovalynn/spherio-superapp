@@ -3,7 +3,7 @@ import { unavailableDecision } from "@spherio/market-integrity";
 import { verifyDecisionReceipt, consumeDecisionReceipt } from "@spherio/market-integrity/receipt";
 import type { MIAuthority, MIReceipt, WalletIntent } from "@spherio/market-integrity/receipt";
 
-const READ_ONLY_POST = new Set(["/api/pump/quote","/api/pump/participants","/api/pump/discover"]);
+const READ_ONLY_POST = new Set(["/api/pump/quote","/api/pump/participants","/api/pump/discover","/api/prime/quote","/api/riodex/simulate","/api/riolight/swap/quote"]);
 export function requiresMarketIntegrity(path:string,method:string) {
   return ["POST","PUT","PATCH","DELETE"].includes(method) && !READ_ONLY_POST.has(path) &&
     /\/(pump|prime|riodex|rioex|spo20|rusd|swap|liquidity|bridge|createtoken)(?:\/|$)/.test(path);

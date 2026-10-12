@@ -17,11 +17,13 @@ export type PumpEconomicsPolicy = {
 };
 
 export type PumpEconomicsResolved = PumpEconomicsPolicy & {
-  rioPriceUsd: number;
-  graduationTargetRio: number;
-  graduationTargetRioMin: number;
-  graduationTargetRioMax: number;
-  lpTargetRio: number;
+  available:false;
+  authoritative:false;
+  rioPriceUsd: null;
+  graduationTargetRio: null;
+  graduationTargetRioMin: null;
+  graduationTargetRioMax: null;
+  lpTargetRio: null;
 };
 
 function round(value: number, decimals = 2) {
@@ -58,10 +60,6 @@ export function resolvePumpEconomics(rioPriceUsd: number): PumpEconomicsResolved
 
   return {
     ...policy,
-    rioPriceUsd: round(rioPriceUsd, 6),
-    graduationTargetRio: round(policy.graduationTargetUsd / rioPriceUsd, 2),
-    graduationTargetRioMin: round(policy.graduationTargetUsdMin / rioPriceUsd, 2),
-    graduationTargetRioMax: round(policy.graduationTargetUsdMax / rioPriceUsd, 2),
-    lpTargetRio: round(policy.lpTargetUsd / rioPriceUsd, 2),
+    available:false,authoritative:false,rioPriceUsd:null,graduationTargetRio:null,graduationTargetRioMin:null,graduationTargetRioMax:null,lpTargetRio:null,
   };
 }

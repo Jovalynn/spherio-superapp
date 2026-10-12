@@ -12,27 +12,38 @@ export function amount(value) {
 function integer(value,label) {if(!Number.isSafeInteger(value)||value<=0)throw Error(label);return value;}
 function timestamp(value){if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value))throw Error("INVALID_TIMESTAMP");const t=Date.parse(value);if(!Number.isFinite(t))throw Error("INVALID_TIMESTAMP");return t;}
 function min(values){return values.reduce((a,b)=>a<b?a:b);}
-export function cpmmQuote(input,reserveIn,reserveOut,feeBps) {
-  const dx=amount(input),x=amount(reserveIn),y=amount(reserveOut);
-  if(x===0n||y===0n||!Number.isInteger(feeBps)||feeBps<0||feeBps>=10000)throw Error("INVALID_CPMM_STATE");
-  const net=dx*(BPS-BigInt(feeBps));const output=y*net/(x*BPS+net);
-  return {output:output.toString(),reserveInAfter:(x+dx).toString(),reserveOutAfter:(y-output).toString()};
+export function cpmmQuote(input,reserveIn,reserveOut,feeBps,protocolFeeBps=0) {
+ const dx=amount(input),x=amount(reserveIn),y=amount(reserveOut);
+ const poolMax=(1n<<128n)-1n;if(dx>poolMax||x>poolMax||y>poolMax)throw Error("CANT_FIT_NATIVE_POOL_UINT128");
+ if(x===0n||y===0n||!Number.isInteger(feeBps)||feeBps<0||feeBps>=10000||!Number.isInteger(protocolFeeBps)||protocolFeeBps<0||protocolFeeBps>feeBps)throw Error("INVALID_CPMM_STATE");
+ // Exact deployed-source model: floor total and protocol fees separately,
+ // retain only the LP fee, and calculate output from the integer net input.
+ const totalFee=dx*BigInt(feeBps)/BPS,protocolFee=dx*BigInt(protocolFeeBps)/BPS,net=dx-totalFee;
+ const output=y*net/(x+net),after=x+dx-protocolFee;if(after>poolMax)throw Error("POOL_RESERVE_OVERFLOW");
+ return {output:output.toString(),reserveInAfter:after.toString(),reserveOutAfter:(y-output).toString(),totalFee:totalFee.toString(),protocolFee:protocolFee.toString()};
 }
 export function cpmmImpactWithin(input,pool,maxImpactBps,definition) {
   const dx=amount(input),x=amount(pool.reserveIn),y=amount(pool.reserveOut);
   if(!Number.isInteger(maxImpactBps)||maxImpactBps<0||maxImpactBps>=10000)throw Error("PRICE_IMPACT_POLICY_UNRESOLVED");
   if(dx===0n)return true;
-  const quote=cpmmQuote(input,pool.reserveIn,pool.reserveOut,pool.feeBps),dy=amount(quote.output),limit=BigInt(maxImpactBps);
-  if(definition==="post_trade_spot_movement")return (x+dx)*y*BPS<=x*(y-dy)*(BPS+limit);
+  const quote=cpmmQuote(input,pool.reserveIn,pool.reserveOut,pool.feeBps,pool.protocolFeeBps),dy=amount(quote.output),limit=BigInt(maxImpactBps);
+  if(definition==="post_trade_spot_movement")return amount(quote.reserveInAfter)*y*BPS<=x*(y-dy)*(BPS+limit);
   if(definition==="average_execution_shortfall_including_fee")return dy*x*BPS>=y*dx*(BPS-limit);
   throw Error("PRICE_IMPACT_DEFINITION_UNRESOLVED");
 }
 export function cpmmCapacity(pool,ceiling,maxImpactBps,definition) {
-  const upper=amount(ceiling);cpmmQuote("0",pool.reserveIn,pool.reserveOut,pool.feeBps);
+  const upper=amount(ceiling);cpmmQuote("0",pool.reserveIn,pool.reserveOut,pool.feeBps,pool.protocolFeeBps);
   if(definition==="average_execution_shortfall_including_fee"){
-    const p=BigInt(integer(maxImpactBps,"PRICE_IMPACT_POLICY_UNRESOLVED"));if(p>=BPS)throw Error("PRICE_IMPACT_POLICY_UNRESOLVED");
-    const n=BPS-BigInt(pool.feeBps),x=amount(pool.reserveIn),numerator=x*(n*BPS-(BPS-p)*BPS);
-    return (numerator<=0n?0n:min([upper,numerator/((BPS-p)*n)])).toString();
+    if(!Number.isInteger(maxImpactBps)||maxImpactBps<0||maxImpactBps>=10000)throw Error("PRICE_IMPACT_POLICY_UNRESOLVED");
+    const p=BigInt(maxImpactBps),n=BPS-BigInt(pool.feeBps),x=amount(pool.reserveIn),y=amount(pool.reserveOut);
+    // A real-valued fee lower bound gives a provable upper bound on capacity.
+    const possible=dx=>(dx*n+BPS)*x*BPS>=dx*(BPS-p)*(x*BPS+dx*n+BPS);
+    let lo=0n,hi=upper;while(lo<hi){const mid=(lo+hi+1n)/2n;if(possible(mid))lo=mid;else hi=mid-1n;}
+    // Integer output rounding is not monotonic in average execution quality.
+    // Search largest-first and prune with monotonic output upper bounds.
+    const ranges=[[0n,lo]];let nodes=0;
+    while(ranges.length){if(++nodes>8192)throw Error("CPMM_EXACT_CAPACITY_RESOURCE_LIMIT");const [a,b]=ranges.pop();if(cpmmImpactWithin(b.toString(),pool,maxImpactBps,definition))return b.toString();if(a===b)continue;const dy=amount(cpmmQuote(b.toString(),pool.reserveIn,pool.reserveOut,pool.feeBps,pool.protocolFeeBps).output);if(dy*x*BPS<y*a*(BPS-p))continue;const mid=(a+b)/2n;ranges.push([a,mid],[mid+1n,b]);}
+    return "0";
   }
   if(definition!=="post_trade_spot_movement")throw Error("PRICE_IMPACT_DEFINITION_UNRESOLVED");
   let lo=0n,hi=upper;
@@ -41,20 +52,19 @@ export function cpmmCapacity(pool,ceiling,maxImpactBps,definition) {
 }
 export function cpmmInputForOutput(output,pool) {
   const q=amount(output),x=amount(pool.reserveIn),y=amount(pool.reserveOut);
-  cpmmQuote("0",pool.reserveIn,pool.reserveOut,pool.feeBps);
+  cpmmQuote("0",pool.reserveIn,pool.reserveOut,pool.feeBps,pool.protocolFeeBps);
   if(q>=y)throw Error("OUTPUT_EXCEEDS_POOL_RESERVES");
-  const numerator=q*x*BPS,denominator=(y-q)*(BPS-BigInt(pool.feeBps));
-  return ((numerator+denominator-1n)/denominator).toString();
+  const net=(q*x+(y-q)-1n)/(y-q),factor=BPS-BigInt(pool.feeBps);
+  let lo=net,hi=(net*BPS+factor-1n)/factor;
+  while(lo<hi){const mid=(lo+hi)/2n;if(mid-mid*BigInt(pool.feeBps)/BPS>=net)hi=mid;else lo=mid+1n;}
+  return lo.toString();
 }
 export function cpmmAssetCapacity(pool,assetId,ceiling,maxImpactBps,definition) {
   if(assetId===pool.assetInId)return cpmmCapacity(pool,ceiling,maxImpactBps,definition);
   if(assetId!==pool.assetOutId)throw Error("POOL_ASSET_UNITS_MISMATCH");
-  let lo=0n,hi=min([amount(ceiling),amount(pool.reserveOut)-1n]);
-  if(hi<0n)throw Error("INVALID_POOL_RESERVES");
-  // For output-side limits, convert into the actual input units before testing
-  // the invariant. The decision quantity remains in the constrained asset units.
-  while(lo<hi){const mid=(lo+hi+1n)/2n,input=cpmmInputForOutput(mid.toString(),pool);if(cpmmImpactWithin(input,pool,maxImpactBps,definition))lo=mid;else hi=mid-1n;}
-  return lo.toString();
+  const q=min([amount(ceiling),amount(pool.reserveOut)-1n]);if(q<0n)throw Error("INVALID_POOL_RESERVES");
+  const input=cpmmInputForOutput(q.toString(),pool),cap=cpmmCapacity(pool,input,maxImpactBps,definition);
+  return min([q,amount(cpmmQuote(cap,pool.reserveIn,pool.reserveOut,pool.feeBps,pool.protocolFeeBps).output)]).toString();
 }
 function verifyEvidence(item,policy,now,name) {
   if(!item||item.verified!==true||typeof item.source!=="string"||!policy.trustedSources?.includes(item.source)||!item.reference||!item.blockHash||!/^([1-9][0-9]*)$/.test(item.height||"")||item.chainId!==policy.chainId)throw Error("CANONICAL_"+name+"_UNAVAILABLE");
@@ -105,10 +115,10 @@ export function evaluateMarketIntegrity(policy,state,intent,now=Date.now()) {
     const terms=policy.terms?.[intent.operation];if(!terms)throw Error("MAX_TX_TERMS_UNRESOLVED");
     if(terms.cpmm?.inapplicable){if(!terms.cpmm.reason)throw Error("MISSING_INAPPLICABILITY_REASON");omittedTerms.push({term:"cpmm",reason:terms.cpmm.reason});}
     else {
-      verifyEvidence(state.evidence?.pool,policy,now,"pool");if(state.pool?.model!=="constant_product_v1"||state.pool.poolId!==intent.poolId)throw Error("POOL_MODEL_OR_IDENTITY_MISMATCH");
+      verifyEvidence(state.evidence?.pool,policy,now,"pool");if(state.pool?.model!=="riodex_cpmm_v1"||!Number.isInteger(state.pool.protocolFeeBps)||state.pool.protocolFeeBps<0||state.pool.protocolFeeBps>state.pool.feeBps||state.pool.poolId!==intent.poolId)throw Error("POOL_MODEL_OR_IDENTITY_MISMATCH");
       if(intent.operation==="swap"){
         if(intent.direction==="accumulation"&&policy.assetId!==state.pool.assetOutId||intent.direction==="disposal"&&policy.assetId!==state.pool.assetInId)throw Error("SWAP_DIRECTION_ASSET_MISMATCH");
-        const actualInput=amount(intent.poolInputBaseUnits),quoted=cpmmQuote(actualInput.toString(),state.pool.reserveIn,state.pool.reserveOut,state.pool.feeBps);
+        const actualInput=amount(intent.poolInputBaseUnits),quoted=cpmmQuote(actualInput.toString(),state.pool.reserveIn,state.pool.reserveOut,state.pool.feeBps,state.pool.protocolFeeBps);
         const actualQuantity=policy.assetId===state.pool.assetInId?actualInput:amount(quoted.output);
         if(actualQuantity!==quantity)throw Error("SWAP_QUANTITY_DOES_NOT_MATCH_CANONICAL_EXECUTION");
       }
@@ -119,7 +129,7 @@ export function evaluateMarketIntegrity(policy,state,intent,now=Date.now()) {
       const inputCeiling=policy.assetId===state.pool.assetInId?policyCeiling:cpmmInputForOutput(min([policyCeiling,amount(state.pool.reserveOut)-1n]).toString(),state.pool);
       const totalCapacity=amount(cpmmCapacity(state.pool,inputCeiling.toString(),policy.maxPriceImpactBps,policy.priceImpactDefinition));
       const remainingInput=totalCapacity>pendingInput?totalCapacity-pendingInput:0n;
-      constraints.cpmm=(policy.assetId===state.pool.assetInId?remainingInput:amount(cpmmQuote(remainingInput.toString(),state.pool.reserveIn,state.pool.reserveOut,state.pool.feeBps).output)).toString();
+      constraints.cpmm=(policy.assetId===state.pool.assetInId?remainingInput:amount(cpmmQuote(remainingInput.toString(),state.pool.reserveIn,state.pool.reserveOut,state.pool.feeBps,state.pool.protocolFeeBps).output)).toString();
     }
     if(terms.effectiveLiquidity?.inapplicable){if(!terms.effectiveLiquidity.reason)throw Error("MISSING_INAPPLICABILITY_REASON");omittedTerms.push({term:"effectiveLiquidity",reason:terms.effectiveLiquidity.reason});}
     else {

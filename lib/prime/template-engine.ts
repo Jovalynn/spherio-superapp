@@ -40,8 +40,8 @@ export type PrimeProjectConfig = {
   logoUrl?: string;
   decimals: number;
 
-  feeUsd: number;
-  feeRio: number;
+  feeUsd: number | null;
+  feeRio: number | null;
   feeLabel: string;
   feeRecipient: string;
 
@@ -173,8 +173,8 @@ export type PrimeCreateSuccess = {
   screenerUrl: string;
   liquidityUrl: string;
   verifiedStatus: "verified" | "unverified";
-  feePaidRio: number;
-  feeUsdReference: number;
+  feePaidRio: number | null;
+  feeUsdReference: number | null;
   feeRecipient: string;
   successActions: string[];
   aiOutputs: string[];

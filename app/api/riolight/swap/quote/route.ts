@@ -291,7 +291,6 @@ function asPositiveAmount(value: unknown) {
 }
 
 export async function POST(req: NextRequest) {
-  const miRejection=await enforceAPIMarketIntegrity(req);if(miRejection)return Response.json(miRejection,{status:503});
 
   let quoteStage = "start";
 

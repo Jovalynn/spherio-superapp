@@ -77,7 +77,7 @@ export type PumpGraduationAuthorityState = {
   graduationTargetUsdMin: number;
   graduationTargetUsdMax: number;
   lpTargetUsd: number;
-  usdRemainingToGraduate: number;
+  usdRemainingToGraduate: number | null;
   lpActivationLabel: string;
   lpActivationReady: boolean;
 };

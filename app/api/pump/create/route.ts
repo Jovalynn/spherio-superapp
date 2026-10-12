@@ -1,3 +1,6 @@
+import {validatePumpLogo} from "@/lib/pump/logo-validation.mjs";
+import {createHash} from "crypto";
+import {createConfiguredPool} from "@/lib/db/configuredPool";
 import {verifyPumpCreation} from "@/lib/pump/creation-proof.mjs";
 import { enforceAPIMarketIntegrity } from "@/lib/market-integrity/api-guard";
 import { NextRequest, NextResponse } from "next/server";
@@ -22,7 +25,7 @@ declare global {
 async function getPumpCreatePgPool() {
   if (!globalThis.__pumpCreatePgPool) {
     const { Pool } = await import("pg");
-    globalThis.__pumpCreatePgPool = new Pool({
+    globalThis.__pumpCreatePgPool = createConfiguredPool({
       connectionString: process.env.DATABASE_URL,
       host: process.env.PGHOST,
       port: process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
@@ -75,6 +78,8 @@ async function registerPumpLiveState(params: {
     family: "spo20",
     rail: "pump",
     source: "pump_create_api",
+    pump_bonding_verified:false,
+    discoverable:false,
     description: params.description || null,
     logo_url: params.logoUrl || null,
     website: params.website || null,
@@ -110,7 +115,7 @@ async function registerPumpLiveState(params: {
         logo_url,
         metadata_json
       )
-      VALUES ($1,$2,$3,$4,6,$5,'bonding','urio','urio','RUSD',$6,$7,now(),$8,$9,$10::jsonb)
+      VALUES ($1,$2,$3,$4,6,$5,'created_pending_bonding','urio','urio','RUSD',$6,$7,now(),$8,$9,$10::jsonb)
       ON CONFLICT (token_address) DO UPDATE SET
         creator_address = pump_live_tokens.creator_address,
         token_name = EXCLUDED.token_name,
@@ -121,7 +126,7 @@ async function registerPumpLiveState(params: {
         metadata_json = COALESCE(pump_live_tokens.metadata_json, '{}'::jsonb) || COALESCE(EXCLUDED.metadata_json, '{}'::jsonb),
         status = CASE
           WHEN pump_live_tokens.status IN ('graduating','graduated') THEN pump_live_tokens.status
-          ELSE 'bonding'
+          ELSE pump_live_tokens.status
         END,
         created_tx_hash = EXCLUDED.created_tx_hash
       `,
@@ -180,36 +185,7 @@ async function registerPumpLiveState(params: {
       ],
     );
 
-    await client.query(
-      `
-      INSERT INTO pump_live_curve_state (
-        token_address,
-        virtual_rio_reserve_urio,
-        virtual_token_reserve_base,
-        real_rio_reserve_urio,
-        real_token_reserve_base,
-        target_graduation_value_rusd,
-        target_market_cap_rusd,
-        updated_height,
-        updated_at
-      )
-      VALUES ($1,$2,$3,0,$3,15000.000000,65000.000000,$4,now())
-      ON CONFLICT (token_address) DO UPDATE SET
-        virtual_rio_reserve_urio = EXCLUDED.virtual_rio_reserve_urio,
-        virtual_token_reserve_base = EXCLUDED.virtual_token_reserve_base,
-        real_token_reserve_base = EXCLUDED.real_token_reserve_base,
-        target_graduation_value_rusd = EXCLUDED.target_graduation_value_rusd,
-        target_market_cap_rusd = EXCLUDED.target_market_cap_rusd,
-        updated_height = EXCLUDED.updated_height,
-        updated_at = now()
-      `,
-      [
-        params.tokenAddress,
-        "100000000000",
-        maxSupplyBase,
-        createdHeight,
-      ],
-    );
+    // Only canonical curve events may establish reserves.
 
     await client.query("COMMIT");
 
@@ -351,11 +327,10 @@ async function saveUploadedPumpLogo(file: any): Promise<string> {
     "image/jpg",
     "image/webp",
     "image/gif",
-    "image/svg+xml",
   ]);
 
   if (type && !allowed.has(type)) {
-    throw new Error("Logo must be PNG, JPG, WEBP, GIF, or SVG.");
+    throw new Error("Logo must be a validated PNG, JPG, WEBP or GIF raster image.");
   }
 
   const originalName = String(file.name || "logo").toLowerCase();
@@ -373,7 +348,8 @@ async function saveUploadedPumpLogo(file: any): Promise<string> {
   const filepath = join(uploadDir, filename);
 
   const bytes = Buffer.from(await file.arrayBuffer());
-  await writeFile(filepath, bytes);
+  validatePumpLogo(bytes,type);
+  await writeFile(filepath, bytes,{flag:"wx",mode:0o600});
 
   return `/uploads/pump/${filename}`;
 }
@@ -458,7 +434,7 @@ export async function POST(request: NextRequest) {
     const economicsPolicy = getPumpEconomicsPolicy();
     const feePolicy = getPumpFeePolicy();
 
-    const projectId = `pump_${Date.now()}`;
+
 
     const tokenAddress=sanitize(payload.tokenAddress),txHash=sanitize(payload.txHash);
     if(!tokenAddress||!txHash)return NextResponse.json({ok:false,available:false,onChainConfirmed:false,registered:false,tokenAddress:null,reason:"FINALIZED_CREATION_PROOF_REQUIRED",error:"Create the token through an authorized wallet operation before registering its finalized chain evidence."},{status:409});
@@ -466,6 +442,7 @@ export async function POST(request: NextRequest) {
     const creationProof=await verifyPumpCreation({tokenAddress,txHash,creator:authorizedCreator},{rpcUrl:process.env.PUMP_CREATION_RPC_URL,chainId:process.env.PUMP_CREATION_CHAIN_ID,spo20Checksum:process.env.PUMP_SPO20_CODE_SHA256,maxAgeSeconds:Number(process.env.PUMP_CREATION_MAX_AGE_SECONDS)});
     if(payload.creatorAddress&&payload.creatorAddress!==creationProof.creator)return NextResponse.json({ok:false,error:"Creator identity does not match finalized creation evidence"},{status:403});
     const createdHeight=creationProof.height,onChainConfirmed=true;
+    const projectId="pump_"+createHash("sha256").update(creationProof.reference+":"+tokenAddress).digest("hex").slice(0,32);
 
     let tokenInfo: any = null;
     let tokenMinter: string | null = null;
@@ -492,7 +469,7 @@ export async function POST(request: NextRequest) {
 
       if (!reserveAuthorityReady) {
         reserveAuthorityWarning =
-          "Token accepted and registered. Automated market preparation will continue in the background.";
+          "Creation verified; bonding, reserve custody and market readiness require canonical evidence.";
       }
     }
 
@@ -560,10 +537,10 @@ export async function POST(request: NextRequest) {
       launchRail: "pump.live",
       baseAsset: economicsPolicy.defaultBaseAsset,
       totalSupply,
-      holders: 12,
-      watchers: 38,
-      momentumScore: 18,
-      communityScore: 24,
+      holders: 0,
+      watchers: 0,
+      momentumScore: 0,
+      communityScore: 0,
       liquidityCommittedRio: 0,
       volume24hUsd: 0,
     });
@@ -588,9 +565,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      pumpBondingVerified:false,
+      discoverable:false,
+      tradeable:false,
+      executionAllowed:false,
       reserveAuthorityWarning,
-      reserveAuthorityStatus: reserveAuthorityReady ? "ready" : "fixed_supply_reserve_required",
-      graduationMode: reserveAuthorityReady ? "finalizer_ready" : "reserve_escrow_required",
+      reserveAuthorityStatus: "canonical_bonding_and_reserve_proof_required",
+      graduationMode: "canonical_lifecycle_proof_required",
       mode: onChainConfirmed ? "onchain_confirmed" : "frontend_preview_only",
       projectId,
       tokenAddress,
@@ -600,7 +581,7 @@ export async function POST(request: NextRequest) {
       symbol,
       totalSupply,
       description,
-      creatorAddress: payload.creatorAddress || null,
+      creatorAddress: creationProof.creator,
       authority: {
         requiredSeedValueRusd: PUMP_REQUIRED_SEED_VALUE_RUSD,
         requiredTokenReserveBase: PUMP_REQUIRED_TOKEN_RESERVE_BASE,
@@ -609,9 +590,9 @@ export async function POST(request: NextRequest) {
         finalizerIsMinter,
         finalizerTokenBalanceBase,
         finalizerHasReserve,
-        reserveAuthorityReady: onChainConfirmed ? reserveAuthorityReady : false,
+        reserveAuthorityReady: false,
         note: onChainConfirmed
-          ? reserveAuthorityWarning || "PUMP token accepted with graduation reserve authority ready."
+          ? reserveAuthorityWarning || "Creation verified; lifecycle authority remains unavailable."
           : "Preview only. Wallet signing / execution must complete before propagation.",
       },
       launchRail: "pump.live",
@@ -633,7 +614,7 @@ export async function POST(request: NextRequest) {
       graduation,
       protection,
       message: onChainConfirmed
-        ? "Pump token created successfully. Your token page and discovery listing are now available."
+        ? "Token creation verified and recorded. Bonding and market discovery await canonical lifecycle evidence."
         : "Pump create request accepted as preview only. Wallet signing / execution must complete before propagation can occur.",
     });
   } catch (error) {

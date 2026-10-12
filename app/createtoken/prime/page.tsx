@@ -141,6 +141,7 @@ type PrimeLaunchSurfaceState = {
 
 type PrimeLaunchSurfaceResponse = {
   ok: boolean;
+  available?: boolean;
   source?: string;
   error?: string;
   state?: PrimeLaunchSurfaceState;
@@ -1678,6 +1679,7 @@ export default function PrimeCreatePage() {
 
         if (!cancelled) {
           setSurfaceState(data.state);
+          if(data.available===false)setSurfaceError("Prime configuration is available. Verified monetary authority and deployment evidence are required before execution.");
         }
       } catch (error) {
         if (!cancelled) {
@@ -2133,7 +2135,8 @@ export default function PrimeCreatePage() {
           aiArchitecture: lockedAiNiche?.architecture || null,
           creatorUtilities: selectedCreatorUtilities,
           creatorUtilityLabels: selectedCreatorUtilityLabels,
-          rioMindNexusReady: Boolean(lockedAiNiche),
+          rioMindNexusReady: false,
+          nexusIntegrationRequested: Boolean(lockedAiNiche),
           liquidityBase,
           liquidityMode,
           liquidityGrade: selectedLiquidityGrade,
@@ -2182,7 +2185,8 @@ export default function PrimeCreatePage() {
           aiArchitecture: lockedAiNiche?.architecture || null,
           creatorUtilities: selectedCreatorUtilities,
           creatorUtilityLabels: selectedCreatorUtilityLabels,
-          rioMindNexusReady: Boolean(lockedAiNiche),
+          rioMindNexusReady: false,
+          nexusIntegrationRequested: Boolean(lockedAiNiche),
           liquidityBase,
           liquidityMode,
           liquidityGrade: selectedLiquidityGrade,
@@ -2356,7 +2360,8 @@ export default function PrimeCreatePage() {
           aiArchitecture: lockedAiNiche?.architecture || null,
           creatorUtilities: selectedCreatorUtilities,
           creatorUtilityLabels: selectedCreatorUtilityLabels,
-          rioMindNexusReady: Boolean(lockedAiNiche),
+          rioMindNexusReady: false,
+          nexusIntegrationRequested: Boolean(lockedAiNiche),
         }),
       });
 
@@ -2597,7 +2602,7 @@ export default function PrimeCreatePage() {
 
                       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                         <div className="text-xs font-bold uppercase tracking-[0.16em] text-cyan-200">
-                          RioMind Nexus integrations
+                          Nexus integration requirements
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {reviewingAiCodebasePackage.rioMindNexusIntegrations.map((item) => (

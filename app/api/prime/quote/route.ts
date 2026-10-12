@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { quotePrimeFee } from "@/lib/prime/fees";
 
 export async function POST(request: NextRequest) {
-  const miRejection=await enforceAPIMarketIntegrity(request);if(miRejection)return Response.json(miRejection,{status:503});
+
 
   try {
     const body = await request.json();
@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
       hybridLabel: body.hybridLabel,
     });
 
-    return NextResponse.json({ ok: true, quote });
+    return NextResponse.json({ok:false,available:false,authoritative:false,executionAllowed:false,reason:"CANONICAL_REFERENCE_PRICE_UNAVAILABLE",quote,configurationAvailable:true},{status:503});
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
