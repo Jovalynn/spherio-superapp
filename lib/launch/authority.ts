@@ -61,8 +61,8 @@ export type PumpProtectionAuthorityState = {
   next: string;
   antiSniper: "Enabled" | "Disabled";
   antiRug: "Verified" | "Unverified";
-  integrityScore: number;
-  creatorLockedLiquidityPercent: number;
+  integrityScore: number | null;
+  creatorLockedLiquidityPercent: number | null;
 };
 
 export type PumpGraduationAuthorityState = {

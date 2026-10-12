@@ -17,6 +17,10 @@ export type PumpProtectionInput = {
 };
 
 export type PumpProtectionState = {
+  available:false;
+  authoritative:false;
+  enforcementVerified:false;
+  reason:string;
   tokenAddress: string;
   symbol: string;
   launchRail: "pump.live";
@@ -28,13 +32,13 @@ export type PumpProtectionState = {
     sniperTaxBps: number;
   };
   risk: {
-    botRiskScore: number;
-    mevRiskScore: number;
-    integrityScore: number;
+    botRiskScore: number | null;
+    mevRiskScore: number | null;
+    integrityScore: number | null;
   };
   liquidity: {
-    creatorLockedLiquidityPercent: number;
-    creatorCanRemoveLiquidity: boolean;
+    creatorLockedLiquidityPercent: number | null;
+    creatorCanRemoveLiquidity: boolean | null;
     poolVerified: boolean;
   };
   issuer: {
@@ -169,6 +173,7 @@ export function buildPumpProtectionState(
   }
 
   return {
+    available:false,authoritative:false,enforcementVerified:false,reason:"CANONICAL_PROTECTION_EVIDENCE_REQUIRED",
     tokenAddress: input.tokenAddress,
     symbol: input.symbol,
     launchRail: input.launchRail ?? "pump.live",
@@ -180,29 +185,29 @@ export function buildPumpProtectionState(
       sniperTaxBps: Math.round(sniperTaxBps),
     },
     risk: {
-      botRiskScore: round2(botRiskScore),
-      mevRiskScore: round2(mevRiskScore),
-      integrityScore: round2(integrityScore),
+      botRiskScore: null,
+      mevRiskScore: null,
+      integrityScore: null,
     },
     liquidity: {
-      creatorLockedLiquidityPercent: round2(creatorLockedLiquidityPercent),
-      creatorCanRemoveLiquidity,
-      poolVerified,
+      creatorLockedLiquidityPercent: null,
+      creatorCanRemoveLiquidity:null,
+      poolVerified:false,
     },
     issuer: {
-      renouncedMint,
-      upgradeabilityRestricted,
+      renouncedMint:false,
+      upgradeabilityRestricted:false,
     },
     status: {
-      antiSniperEnabled,
-      antiBotMonitoringEnabled,
+      antiSniperEnabled:false,
+      antiBotMonitoringEnabled:false,
       mevProtectionRequired,
-      antiRugProtected,
-      launchIntegrityReady,
+      antiRugProtected:false,
+      launchIntegrityReady:false,
     },
     narrative: {
-      summary,
-      nextAction,
+      summary:"Configured protection suggestions are not evidence of active controls.",
+      nextAction:"Verify canonical MI policy, contract protections, buyer evidence and liquidity locks before execution.",
     },
   };
 }
@@ -219,7 +224,7 @@ export function evaluatePumpTradeProtection(params: {
 
   const antiSniperHardBlock = !protection.status.antiSniperEnabled;
   const antiBotHardBlock = !protection.status.antiBotMonitoringEnabled;
-  const priceImpactHardBlock = Math.abs(priceImpactBps) > maxPriceImpactBps;
+  const priceImpactHardBlock = !Number.isFinite(priceImpactBps)||!Number.isFinite(maxPriceImpactBps)||maxPriceImpactBps<0||Math.abs(priceImpactBps) > maxPriceImpactBps;
 
   const antiRugWarning = !protection.status.antiRugProtected;
   const launchIntegrityWarning = !protection.status.launchIntegrityReady;
