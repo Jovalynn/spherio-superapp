@@ -73,9 +73,9 @@ export async function POST(request: NextRequest) {
 
     const config = buildPrimeProjectConfig({
       templateId: body.templateId,
-      projectName: body.projectName,
-      symbol: body.symbol,
-      totalSupply: body.totalSupply,
+      projectName: proof.tokenInfo.name,
+      symbol: proof.tokenInfo.symbol,
+      totalSupply: `${BigInt(proof.tokenInfo.total_supply)/1000000n}.${(BigInt(proof.tokenInfo.total_supply)%1000000n).toString().padStart(6,"0")}`,
       statement: body.statement,
       logoUrl: body.logoUrl,
       hybridLabel: body.hybridLabel,

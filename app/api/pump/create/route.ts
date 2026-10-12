@@ -238,13 +238,14 @@ async function queryTokenBalance(tokenAddress: string, address: string) {
       balance: { address },
     });
 
-    return String(result || "0");
+    const balance=typeof result==="string"?result:result?.balance;
+    return typeof balance==="string"&&/^[0-9]+$/.test(balance)?balance:null;
   } catch {
-    return "0";
+    return null;
   }
 }
 
-function baseAmountGte(value: string, required: string) {
+function baseAmountGte(value: string | null, required: string) {
   try {
     return BigInt(value || "0") >= BigInt(required || "0");
   } catch {
@@ -264,6 +265,7 @@ type PumpCreatePayload = {
   discord?: string;
   youtube?: string;
   logoUrl?: string;
+  logoFile?: File;
   tokenAddress?: string;
   txHash?: string;
   createdHeight?: string | number;
@@ -333,18 +335,12 @@ async function saveUploadedPumpLogo(file: any): Promise<string> {
     throw new Error("Logo must be a validated PNG, JPG, WEBP or GIF raster image.");
   }
 
-  const originalName = String(file.name || "logo").toLowerCase();
-  const ext =
-    originalName.endsWith(".svg") ? "svg" :
-    originalName.endsWith(".gif") ? "gif" :
-    originalName.endsWith(".webp") ? "webp" :
-    originalName.endsWith(".jpg") || originalName.endsWith(".jpeg") ? "jpg" :
-    "png";
+  const ext:Record<string,string>={"image/png":"png","image/jpeg":"jpg","image/jpg":"jpg","image/webp":"webp","image/gif":"gif"};
 
   const uploadDir = join(process.cwd(), "public", "uploads", "pump");
   await mkdir(uploadDir, { recursive: true });
 
-  const filename = `${Date.now()}-${randomUUID()}.${ext}`;
+  const filename = `${Date.now()}-${randomUUID()}.${ext[type]}`;
   const filepath = join(uploadDir, filename);
 
   const bytes = Buffer.from(await file.arrayBuffer());
@@ -366,9 +362,9 @@ async function readPayload(request: NextRequest): Promise<PumpCreatePayload> {
     const form = await request.formData();
 
     const logo = form.get("logo");
-    const uploadedLogoUrl = await saveUploadedPumpLogo(logo);
+    // Publish a logo only after canonical creation has been verified.
     const providedLogoUrl = normalizeUrl(sanitize(form.get("logoUrl") || form.get("logo_url") || form.get("imageUrl") || form.get("image_url")));
-    const logoUrl = uploadedLogoUrl || providedLogoUrl;
+    const logoUrl = providedLogoUrl;
 
     return {
       tokenName: sanitize(form.get("coinName") || form.get("tokenName")),
@@ -382,6 +378,7 @@ async function readPayload(request: NextRequest): Promise<PumpCreatePayload> {
       discord: sanitize(form.get("discord")),
       youtube: sanitize(form.get("youtube")),
       logoUrl,
+      logoFile:typeof logo==="string"?undefined:logo??undefined,
       tokenAddress: sanitize(form.get("tokenAddress")),
       txHash: sanitize(form.get("txHash")),
       creatorAddress: sanitize(form.get("creatorAddress")),
@@ -441,12 +438,13 @@ export async function POST(request: NextRequest) {
     const authorizedCreator=JSON.parse(request.headers.get("x-mi-decision-receipt")||"{}").payload?.account;
     const creationProof=await verifyPumpCreation({tokenAddress,txHash,creator:authorizedCreator},{rpcUrl:process.env.PUMP_CREATION_RPC_URL,chainId:process.env.PUMP_CREATION_CHAIN_ID,spo20Checksum:process.env.PUMP_SPO20_CODE_SHA256,maxAgeSeconds:Number(process.env.PUMP_CREATION_MAX_AGE_SECONDS)});
     if(payload.creatorAddress&&payload.creatorAddress!==creationProof.creator)return NextResponse.json({ok:false,error:"Creator identity does not match finalized creation evidence"},{status:403});
+    if(payload.logoFile)payload.logoUrl=await saveUploadedPumpLogo(payload.logoFile);
     const createdHeight=creationProof.height,onChainConfirmed=true;
     const projectId="pump_"+createHash("sha256").update(creationProof.reference+":"+tokenAddress).digest("hex").slice(0,32);
 
     let tokenInfo: any = null;
     let tokenMinter: string | null = null;
-    let finalizerTokenBalanceBase = "0";
+    let finalizerTokenBalanceBase: string | null = null;
     let finalizerIsMinter = false;
     let finalizerHasReserve = false;
     let reserveAuthorityReady = false;
@@ -484,8 +482,8 @@ export async function POST(request: NextRequest) {
         pumpRegistration = await registerPumpLiveState({
           tokenAddress,
           creatorAddress: creationProof.creator,
-          tokenName,
-          symbol,
+          tokenName:creationProof.tokenInfo.name,
+          symbol:creationProof.tokenInfo.symbol,
           totalSupply,
           txHash,
           createdHeight,
@@ -577,8 +575,8 @@ export async function POST(request: NextRequest) {
       tokenAddress,
       txHash: txHash || null,
       pumpRegistration,
-      tokenName,
-      symbol,
+      tokenName:creationProof.tokenInfo.name,
+      symbol:creationProof.tokenInfo.symbol,
       totalSupply,
       description,
       creatorAddress: creationProof.creator,
