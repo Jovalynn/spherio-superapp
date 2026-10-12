@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getRioMindOwnerKey, getRioMindPgPool } from "@/lib/riomind/db";
 
-import { extractXlsxPreview, SpreadsheetValidationError } from "@/lib/riomind/xlsx-preview.mjs";
+import { extractXlsxPreview, extractDocxPreview, SpreadsheetValidationError } from "@/lib/riomind/xlsx-preview.mjs";
 
 import { publishUploadedFile } from "@/lib/riomind/upload-publication.mjs";
 
@@ -68,16 +68,9 @@ async function extractDocxTextPreview(
     return null;
   }
 
-  try {
-    const mammothModule = await import("mammoth");
-    const mammoth = mammothModule.default ?? mammothModule;
-    const result = await mammoth.extractRawText({ buffer });
-    const extracted = cleanExtractedText(result.value || "");
-    return extracted || null;
-  } catch (error) {
-    console.warn("[RioMind Nexus] DOCX extraction failed", error);
-    return null;
-  }
+  // DOCX shares the same archive, memory, deadline and admission bounds as XLSX.
+  const extracted = cleanExtractedText(await extractDocxPreview(buffer));
+  return extracted || null;
 }
 
 async function extractSpreadsheetTextPreview(
