@@ -10,7 +10,8 @@ export function amount(value) {
   const n=BigInt(value);if(n>MAX)throw Error("AMOUNT_OVERFLOW");return n;
 }
 function integer(value,label) {if(!Number.isSafeInteger(value)||value<=0)throw Error(label);return value;}
-function timestamp(value){if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value))throw Error("INVALID_TIMESTAMP");const t=Date.parse(value);if(!Number.isFinite(t))throw Error("INVALID_TIMESTAMP");return t;}
+// Accept Go RFC3339Nano observations (up to nanosecond precision) while freshness uses millisecond clock time.
+function timestamp(value){if(typeof value!=="string"||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z$/.test(value))throw Error("INVALID_TIMESTAMP");const t=Date.parse(value);if(!Number.isFinite(t))throw Error("INVALID_TIMESTAMP");return t;}
 function min(values){return values.reduce((a,b)=>a<b?a:b);}
 export function cpmmQuote(input,reserveIn,reserveOut,feeBps,protocolFeeBps=0) {
  const dx=amount(input),x=amount(reserveIn),y=amount(reserveOut);
