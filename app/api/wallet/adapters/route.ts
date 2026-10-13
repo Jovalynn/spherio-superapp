@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { SPHERIO } from "@/lib/spherioConfig";
+import { getRioWalletMarketState } from "@/lib/wallet-adapters/rio-market-state";
 import { getSpherioIbcRegistry } from "@/lib/ibc/registry";
 import { getSpherioAxelarRegistry } from "@/lib/bridge/axelar";
 import { getSpherioHyperlaneRegistry } from "@/lib/bridge/hyperlane";
@@ -18,21 +19,12 @@ const RIO_LOGO_URI =
   "https://raw.githubusercontent.com/Lerivee/RUSD/refs/heads/main/Untitled%20design.png";
 
 function getRioWalletAsset() {
-  const now = new Date().toISOString();
-
   return {
     denom: "urio",
     symbol: "RIO",
     decimals: 6,
     logoURI: RIO_LOGO_URI,
-    price: {
-      rusd: 0.1,
-      usd: 0.1,
-      usdt: 0.1,
-      btc: null,
-    },
-    priceSource: "rioex_valuation_rio",
-    updatedAt: now,
+    ...getRioWalletMarketState(),
   };
 }
 
