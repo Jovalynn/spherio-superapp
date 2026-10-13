@@ -50,7 +50,11 @@ export async function GET() {
         },
       ],
       rpc_endpoint: rpcEndpoint(),
-      updated_at: new Date().toISOString(),
+      // A request-time timestamp is not the observation height/time. Until the
+      // query API returns its verified block metadata, freshness is unavailable.
+      observation_height: null,
+      updated_at: null,
+      observation_status: "UNAVAILABLE",
     });
   } catch (error: any) {
     return NextResponse.json(
