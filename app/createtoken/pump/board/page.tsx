@@ -11,6 +11,7 @@ import {
 import { RioLightPortfolioPanel } from "@/components/riolight/RioLightPortfolioPanel";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { resolveLaunchLifecycle } from "@/lib/launch/resolveLaunchLifecycle";
+import { hasPumpBoardSettlementProof } from "@/lib/pump/discovery-authority.mjs";
 
 type DiscoverSort = "trending" | "progress" | "marketCap" | "new";
 type ChartRange = "15m" | "1d" | "2d" | "5d" | "1w" | "1mo" | "5mo" | "1y";
@@ -42,8 +43,10 @@ type PumpBoardRow = {
   reserveLabel?: string | null;
   liquidityStatus?: string | null;
   graduationStatus?: string | null;
+  graduationProofVerified?: boolean;
+  liquidityProofVerified?: boolean;
   routes?: {
-    trade: string;
+    trade: string | null;
     pool: string | null;
     screener: string;
     explorer: string;
@@ -429,13 +432,9 @@ function isAddressLike(value?: string | null) {
 }
 
 function hasPumpLpOrMarketProof(row?: PumpBoardRow | null) {
-  return Boolean(
-    row?.liquidityStatus === "ready" ||
-      row?.liquidityStatus === "live" ||
-      row?.graduationStatus === "completed" ||
-      row?.graduationStatus === "pair_created" ||
-      row?.pairAddress,
-  );
+  // UI lifecycle labels and pair addresses are not settlement evidence. The
+  // API may set these flags only after canonical chain proof verification.
+  return hasPumpBoardSettlementProof(row);
 }
 
 function isPumpGraduationPending(row?: PumpBoardRow | null) {
@@ -455,17 +454,17 @@ function resolvePumpBoardLifecycle(row?: PumpBoardRow | null) {
     symbol: row?.symbol,
     assetId: row?.tokenAddress,
     contractAddress: row?.tokenAddress,
-    pairAddress: row?.pairAddress,
+    pairAddress: hasLpOrMarketProof ? row?.pairAddress : null,
     status: trulyGraduated ? "graduated" : row?.stage,
-    lifecycleStatus: trulyGraduated ? "graduated" : row?.graduationStatus,
+    lifecycleStatus: trulyGraduated ? "graduated" : "graduation_pending",
     graduated: trulyGraduated,
-    curveProgress: row?.progressPercent,
-    graduationProgress: row?.progressPercent,
-    indexed: Boolean(row?.routes?.explorer || row?.routes?.screener),
-    rioexIndexed: Boolean(row?.routes?.trade || row?.routes?.screener),
-    rioexAssetId: row?.tokenAddress,
+    curveProgress: trulyGraduated ? row?.progressPercent : Math.min(Number(row?.progressPercent || 0), 99),
+    graduationProgress: trulyGraduated ? row?.progressPercent : Math.min(Number(row?.progressPercent || 0), 99),
+    indexed: Boolean(row?.routes?.explorer),
+    rioexIndexed: hasLpOrMarketProof && Boolean(row?.routes?.trade),
+    rioexAssetId: hasLpOrMarketProof ? row?.tokenAddress : null,
     liquidityAdded: hasLpOrMarketProof,
-    tradeEnabled: trulyGraduated || Boolean(row?.routes?.trade) || Boolean(row?.pairAddress),
+    tradeEnabled: trulyGraduated && Boolean(row?.routes?.trade),
   });
 }
 

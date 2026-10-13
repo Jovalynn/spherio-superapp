@@ -2,6 +2,7 @@ import {createConfiguredPool} from "@/lib/db/configuredPool";
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
 import { unavailablePumpDiscoveryMeasurements } from "@/lib/pump/price-authority.mjs";
+import { mapPumpDiscoveryStage } from "@/lib/pump/discovery-authority.mjs";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -50,6 +51,8 @@ type PumpBoardRow = {
   reserveLabel?: string | null;
   liquidityStatus?: string | null;
   graduationStatus?: string | null;
+  graduationProofVerified: boolean;
+  liquidityProofVerified: boolean;
 
   requiredSeedValueRusd?: number | null;
   requiredSeedRio?: number | null;
@@ -60,7 +63,7 @@ type PumpBoardRow = {
 
   createdHeight?: number | null;
   routes?: {
-    trade: string;
+    trade: string | null;
     pool: string | null;
     screener: string;
     explorer: string;
@@ -166,20 +169,17 @@ function createdAtLabelFromHeight(height: unknown): string {
 }
 
 function mapStage(row: any): PumpBoardRow["stage"] {
-  const tokenStatus = String(row.token_status || "").toLowerCase();
-  const graduationStatus = String(row.graduation_status || "").toLowerCase();
-
-  if (tokenStatus === "graduated" || graduationStatus === "completed") return "graduated";
-  if (tokenStatus === "graduating" || graduationStatus === "pair_created") return "ready";
-  if (toNumber(row.real_rio_reserve_urio, 0) > 0) return "watch";
-  return "momentum";
+  // No canonical settlement-proof provider is wired to this discovery query.
+  // Database status, pair rows, or indexed reserves alone cannot certify
+  // graduation, so this API deliberately supplies no proof.
+  return mapPumpDiscoveryStage(row, null);
 }
 
 function stageLabel(stage: PumpBoardRow["stage"], row: any): string {
   const graduationStatus = String(row.graduation_status || "").toLowerCase();
 
-  if (stage === "graduated") return "Graduated · RioDex Live";
-  if (graduationStatus === "pair_created") return "Pair Created · Needs Finalization";
+  if (stage === "graduated") return "Graduated · Verified chain settlement";
+  if (graduationStatus === "pair_created") return "Pair Record · Verification Pending";
   if (stage === "ready") return "Graduation Watch";
   if (stage === "watch") return "Building Demand";
   return "Momentum";
@@ -232,14 +232,16 @@ function buildRows(dbRows: any[], totalSupply: number): PumpBoardRow[] {
       createdAtLabel: createdAtLabelFromHeight(row.created_height),
       score: Number(score.toFixed(4)),
 
-      pairAddress,
+      pairAddress: stage === "graduated" ? pairAddress : null,
       reserveLabel: reserves,
       liquidityStatus: hasLiquidity
-          ? "reserves_indexed"
+          ? "observed_reserves_unverified"
           : hasPair
-            ? "pair_created"
+            ? "unverified_pair_record"
             : "pending",
-      graduationStatus: row.graduation_status || row.token_status || null,
+      graduationStatus: "graduation_pending",
+      graduationProofVerified: false,
+      liquidityProofVerified: false,
 
       requiredSeedValueRusd,
       recordedSeedRio: recordedSeedRioValue,
@@ -248,8 +250,12 @@ function buildRows(dbRows: any[], totalSupply: number): PumpBoardRow[] {
 
       createdHeight: row.created_height ? Number(row.created_height) : null,
       routes: {
-        trade: pairAddress ? `/riodex/swap?pair=${encodeURIComponent(pairAddress)}` : "/riodex/swap",
-        pool: pairAddress ? `/riodex/pool/${encodeURIComponent(pairAddress)}` : null,
+        trade: stage === "graduated" && pairAddress
+          ? `/riodex/swap?pair=${encodeURIComponent(pairAddress)}`
+          : null,
+        pool: stage === "graduated" && pairAddress
+          ? `/riodex/pool/${encodeURIComponent(pairAddress)}`
+          : null,
         screener: "/riodex/screener",
         explorer: `/rioexplorer/spo20/${encodeURIComponent(row.token_address)}`,
       },

@@ -3,6 +3,7 @@ import {createConfiguredPool} from "@/lib/db/configuredPool";
 
 import { Pool } from "pg";
 import { pumpMonetaryMeasurements } from "@/lib/pump/price-authority.mjs";
+import { isPumpLiquiditySeeded, mapPumpLifecycleDataStage } from "@/lib/pump/discovery-authority.mjs";
 import type { PumpLifecycleInput } from "@/lib/pump/pump-lifecycle-intelligence";
 
 const URIO_PER_RIO = 1_000_000;
@@ -26,10 +27,6 @@ function toNumber(value: unknown, fallback = 0): number {
   if (value === null || value === undefined || value === "") return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
-}
-
-function status(value: unknown): string {
-  return String(value || "").trim().toLowerCase();
 }
 
 function normalizePumpTokenLookup(value: unknown): string {
@@ -65,26 +62,9 @@ function indexedRioReserve(row: any): number {
 }
 
 function inferStage(row: any): PumpLifecycleInput["stage"] {
-  if (!row) return "draft";
-
-  const tokenStatus = status(row.token_status);
-  const graduationStatus = status(row.graduation_status);
-  const hasPair = Boolean(row.riodex_pair_address || row.pair_address);
-  const hasLiquidity = toNumber(row.reserve_0, 0) > 0 || toNumber(row.reserve_1, 0) > 0;
-  const lpAmount = toNumber(row.lp_token_amount, 0);
-
-  if (tokenStatus === "graduated" || graduationStatus === "completed") {
-    if (hasLiquidity || lpAmount > 0) return "market_live";
-    return "graduated_liquidity_seeded";
-  }
-
-  if (graduationStatus === "pair_created" || hasPair) {
-    return hasLiquidity ? "graduated_liquidity_seeded" : "graduation_pending";
-  }
-
-  if (tokenStatus === "graduating") return "graduation_pending";
-
-  return "bonding_curve_live";
+  // This query has no canonical settlement-proof source. Persisted status, pair
+  // identity, or reserve snapshots alone must not advance lifecycle state.
+  return mapPumpLifecycleDataStage(row, null);
 }
 
 export type PumpLifecycleDbResult = {
@@ -236,11 +216,8 @@ export async function getPumpLifecycleInputForToken(
     }
 
     const stage = inferStage(row);
-    const graduationStatus = status(row.graduation_status);
-    const liquiditySeeded =
-      graduationStatus === "completed" ||
-      graduationStatus === "pair_created" ||
-      Boolean(row.riodex_pair_address || row.pair_address);
+    // No verifier is wired into this DB read; keep the lifecycle fail-closed.
+    const liquiditySeeded = isPumpLiquiditySeeded(row, null);
 
     const input: PumpLifecycleInput = {
       tokenName: row.token_name || row.token_symbol || "Pump Token",
